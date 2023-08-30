@@ -187,7 +187,7 @@ class Chat extends Base {
                 if (m.isNotification) {
                     return false; // dont include notification messages
                 }
-                if (searchOptions && searchOptions.fromMe && m.id.fromMe !== searchOptions.fromMe) {
+                if (searchOptions && searchOptions.fromMe !== undefined && m.id.fromMe !== searchOptions.fromMe) {
                     return false;
                 }
                 return true;
@@ -260,6 +260,15 @@ class Chat extends Base {
      */
     async getLabels() {
         return this.client.getChatLabels(this.id._serialized);
+    }
+
+    /**
+     * Add or remove labels to this Chat
+     * @param {Array<number|string>} labelIds
+     * @returns {Promise<void>}
+     */
+    async changeLabels(labelIds) {
+        return this.client.addOrRemoveLabels(labelIds, [this.id._serialized]);
     }
 }
 

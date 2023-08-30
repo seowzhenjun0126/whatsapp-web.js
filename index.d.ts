@@ -1,6 +1,8 @@
 
 import { EventEmitter } from 'events'
 import { RequestInit } from 'node-fetch'
+import { ButtonSpec, FormattedButtonSpec } from './src/structures/Buttons'
+import { FormattedSectionSpec, SectionSpec } from './src/structures/List'
 import * as puppeteer from 'puppeteer'
 
 declare namespace WAWebJS {
@@ -267,6 +269,12 @@ declare namespace WAWebJS {
         /** Emitted when a new message is created, which may include the current user's own messages */
         on(event: 'message_create', listener: (
             /** The message that was created */
+            message: Message
+        ) => void): this
+
+        /** Emitted when a new message ciphertext is received  */
+        on(event: 'message_ciphertext', listener: (
+            /** The message that was ciphertext */
             message: Message
         ) => void): this
 
@@ -579,6 +587,7 @@ declare namespace WAWebJS {
         AUTHENTICATION_FAILURE = 'auth_failure',
         READY = 'ready',
         MESSAGE_RECEIVED = 'message',
+        MESSAGE_CIPHERTEXT = 'message_ciphertext',
         MESSAGE_CREATE = 'message_create',
         MESSAGE_REVOKED_EVERYONE = 'message_revoke_everyone',
         MESSAGE_REVOKED_ME = 'message_revoke_me',
@@ -1458,21 +1467,21 @@ declare namespace WAWebJS {
     export class List {
         body: string
         buttonText: string
-        sections: Array<any>
+        sections: Array<FormattedSectionSpec>
         title?: string | null
         footer?: string | null
         
-        constructor(body: string, buttonText: string, sections: Array<any>, title?: string | null, footer?: string | null)
+        constructor(body: string, buttonText: string, sections: Array<SectionSpec>, title?: string | null, footer?: string | null)
     }
     
     /** Message type Buttons */
     export class Buttons {
         body: string | MessageMedia
-        buttons: Array<{ buttonId: string; buttonText: {displayText: string}; type: number }>
+        buttons: FormattedButtonSpec
         title?: string | null
         footer?: string | null
         
-        constructor(body: string, buttons: Array<{ id?: string; body: string }>, title?: string | null, footer?: string | null)
+        constructor(body: string, buttons: Array<ButtonSpec>, title?: string | null, footer?: string | null)
     }
 
     /** Message type Reaction */

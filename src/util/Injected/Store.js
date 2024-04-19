@@ -171,7 +171,7 @@ exports.ExposeStore = () => {
     window.injectToFunction({
         module: 'WAWebE2EProtoGenerator',
         function: 'createMsgProtobuf'
-    }, (func, args) => {
+    }, (func, ...args) => {
         const [message] = args;
         const proto = func(...args);
         if (message.hydratedButtons) {
@@ -262,7 +262,7 @@ exports.ExposeStore = () => {
     window.injectToFunction({
         module: 'WAWebBackendJobsCommon',
         function: 'encodeMaybeMediaType',
-    }, (func, args) => {
+    }, (func, ...args) => {
         const [type] = args;
         if (type === 'button') {
             return window.require('WAWap').DROP_ATTR;

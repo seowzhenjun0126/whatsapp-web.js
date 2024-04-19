@@ -49,6 +49,7 @@ exports.ExposeLegacyStore = () => {
     window.Store.QuotedMsg = window.mR.findModule('getQuotedMsgObj')[0];
     window.Store.LinkPreview = window.mR.findModule('getLinkPreview')[0];
     window.Store.Socket = window.mR.findModule('deprecatedSendIq')[0];
+    window.Store.SocketSmax = window.mR.findModule('smax')[0].smax;
     window.Store.SocketWap = window.mR.findModule('wap')[0];
     window.Store.SearchContext = window.mR.findModule('getSearchContext')[0].getSearchContext;
     window.Store.DrawerManager = window.mR.findModule('DrawerManager')[0].DrawerManager;
@@ -140,7 +141,258 @@ exports.ExposeLegacyStore = () => {
         module[target.index][target.function] = modifiedFunction;
     };
 
-    window.injectToFunction({ module: 'mediaTypeFromProtobuf', index: 0, function: 'mediaTypeFromProtobuf' }, (func, ...args) => { const [proto] = args; return proto.locationMessage ? null : func(...args); });
+    // The following was implemented and inspired from wppconnect/wa-js at 
+    // https://github.com/wppconnect-team/wa-js/tree/main/src/chat/functions/prepareMessageButtons.ts
 
-    window.injectToFunction({ module: 'typeAttributeFromProtobuf', index: 0, function: 'typeAttributeFromProtobuf' }, (func, ...args) => { const [proto] = args; return proto.locationMessage || proto.groupInviteMessage ? 'text' : func(...args); });
+    // Find proxy modules
+    window.findProxyModel = (name) => {
+        const baseName = name.replace(/Model$/, '');
+
+        const names = [baseName];
+
+        // ChatModel => "chat"
+        names.push(baseName.replace(/^(\w)/, (l) => l.toLowerCase()));
+
+        // CartItemModel => "cart-item"
+        // ProductListModel => "product_list"
+        const parts = baseName.split(/(?=[A-Z])/);
+
+        names.push(parts.join('-').toLowerCase());
+        names.push(parts.join('_').toLowerCase());
+
+        const results = window.mR.findModule((m) =>
+            names.includes(
+                m.default?.prototype?.proxyName ||
+                m[name]?.prototype?.proxyName ||
+                m[baseName]?.prototype?.proxyName
+            )
+        )[0];
+
+        return results.default || results[name] || results[baseName];
+    };
+
+    // Find Template models
+    window.Store.TemplateButtonModel = window.findProxyModel('TemplateButtonModel');
+    window.Store.TemplateButtonCollection = window.mR.findModule('TemplateButtonCollection')[0].TemplateButtonCollection;
+
+    // Find quick reply models
+    window.Store.ReplyButtonModel = window.findProxyModel('ReplyButtonModel');
+    window.Store.ButtonCollection = window.mR.findModule('ButtonCollection')[0].ButtonCollection;
+
+    // Modify functions 
+    window.injectToFunction({
+        module: 'createMsgProtobuf',
+        index: 0,
+        function: 'createMsgProtobuf'
+    }, (func, args) => {
+        const [message] = args;
+        const proto = func(...args);
+        if (message.hydratedButtons) {
+            const hydratedTemplate = {
+                hydratedButtons: message.hydratedButtons,
+            };
+
+            if (message.footer) {
+                hydratedTemplate.hydratedFooterText = message.footer;
+            }
+
+            if (message.caption) {
+                hydratedTemplate.hydratedContentText = message.caption;
+            }
+
+            if (message.title) {
+                hydratedTemplate.hydratedTitleText = message.title;
+            }
+
+            if (proto.conversation) {
+                hydratedTemplate.hydratedContentText = proto.conversation;
+                delete proto.conversation;
+            } else if (proto.extendedTextMessage?.text) {
+                hydratedTemplate.hydratedContentText = proto.extendedTextMessage.text;
+                delete proto.extendedTextMessage;
+            } else {
+                // Search media part in message
+                let found;
+                const mediaPart = [
+                    'documentMessage',
+                    'imageMessage',
+                    'locationMessage',
+                    'videoMessage',
+                ];
+                for (const part of mediaPart) {
+                    if (part in proto) {
+                        found = part;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    return proto;
+                }
+
+                // Media message doesn't allow title
+                hydratedTemplate[found] = proto[found];
+
+                // Copy title to caption if not setted
+                if (
+                    hydratedTemplate.hydratedTitleText &&
+                    !hydratedTemplate.hydratedContentText
+                ) {
+                    hydratedTemplate.hydratedContentText =
+                        hydratedTemplate.hydratedTitleText;
+                }
+
+                // Remove title for media messages
+                delete hydratedTemplate.hydratedTitleText;
+
+                if (found === 'locationMessage') {
+                    if (
+                        !hydratedTemplate.hydratedContentText &&
+                        (message[found].name || message[found].address)
+                    ) {
+                        hydratedTemplate.hydratedContentText =
+                            message[found].name && message[found].address
+                                ? `${message[found].name}\n${message[found].address}`
+                                : message[found].name || message[found].address || '';
+                    }
+                }
+
+                // Ensure a content text;
+                hydratedTemplate.hydratedContentText =
+                    hydratedTemplate.hydratedContentText || ' ';
+
+                delete proto[found];
+            }
+
+            proto.templateMessage = {
+                hydratedTemplate,
+            };
+        }
+
+        return proto;
+    });
+
+    window.injectToFunction({
+        module: 'mediaTypeFromProtobuf',
+        index: 0,
+        function: 'mediaTypeFromProtobuf'
+    }, (func, ...args) => {
+        const [proto] = args;
+        if (proto.templateMessage?.hydratedTemplate) {
+            return func(proto.templateMessage.hydratedTemplate);
+        }
+        return proto.locationMessage ? null : func(...args);
+    });
+
+    window.injectToFunction({
+        module: 'typeAttributeFromProtobuf',
+        index: 0,
+        function: 'typeAttributeFromProtobuf'
+    }, (func, ...args) => {
+        const [proto] = args;
+
+        if (proto.ephemeralMessage) {
+            const { message } = proto.ephemeralMessage;
+            return message ? callback(func, [message]) : 'text';
+        }
+        if (proto.deviceSentMessage) {
+            const { message } = proto.deviceSentMessage;
+            return message ? callback(func, [message]) : 'text';
+        }
+        if (proto.viewOnceMessage) {
+            const { message } = proto.viewOnceMessage;
+            return message ? callback(func, [message]) : 'text';
+        }
+
+        if (
+            proto.buttonsMessage?.headerType === 1 ||
+            proto.buttonsMessage?.headerType === 2
+        ) {
+            return 'text';
+        }
+
+        if (proto.listMessage) {
+            return 'text';
+        }
+        
+        if (proto.templateMessage?.hydratedTemplate) {
+            const keys = Object.keys(proto.templateMessage?.hydratedTemplate);
+            const messagePart = [
+                'documentMessage',
+                'imageMessage',
+                'locationMessage',
+                'videoMessage',
+            ];
+            if (messagePart.some((part) => keys.includes(part))) {
+                return 'media';
+            }
+            return 'text';
+        }
+
+        return proto.locationMessage || proto.groupInviteMessage ? 'text' : func(...args);
+    });
+
+    window.injectToFunction({
+        module: 'encodeMaybeMediaType',
+        index: 0,
+        function: 'encodeMaybeMediaType',
+    }, (func, args) => {
+        const [type] = args;
+        if (type === 'button') {
+            return window.mR.findModule('DROP_ATTR')[0].DROP_ATTR;
+        }
+        return func(...args);
+    });
+
+    window.injectToFunction({
+        module: 'createFanoutMsgStanza',
+        index: 0,
+        function: 'createFanoutMsgStanza'
+    }, async (func, ...args) => {
+        const [, proto] = args;
+
+        let buttonNode = null;
+
+        if (proto.buttonsMessage) {
+            buttonNode = window.Store.SocketSmax('buttons');
+        } else if (proto.listMessage) {
+            const listType = proto.listMessage.listType || 0;
+
+            const types = ['unknown', 'single_select', 'product_list'];
+
+            buttonNode = window.Store.SocketSmax('list', {
+                v: '2',
+                type: types[listType],
+            });
+        }
+
+        const node = await func(...args);
+
+        if (!buttonNode) {
+            return node;
+        }
+
+        const content = node.content;
+
+        let bizNode = content.find((c) => c.tag === 'biz');
+
+        if (!bizNode) {
+            bizNode = window.Store.SocketSmax('biz', {}, null);
+            content.push(bizNode);
+        }
+
+        let hasButtonNode = false;
+
+        if (Array.isArray(bizNode.content)) {
+            hasButtonNode = !!bizNode.content.find((c) => c.tag === buttonNode?.tag);
+        } else {
+            bizNode.content = [];
+        }
+
+        if (!hasButtonNode) {
+            bizNode.content.push(buttonNode);
+        }
+
+        return node;
+    });
 };

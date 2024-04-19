@@ -42,6 +42,7 @@ exports.ExposeStore = () => {
     window.Store.QuotedMsg = window.require('WAWebQuotedMsgModelUtils');
     window.Store.LinkPreview = window.require('WAWebLinkPreviewChatAction');
     window.Store.Socket = window.require('WADeprecatedSendIq');
+    window.Store.SocketSmax = window.require('WASmaxJsx').smax;
     window.Store.SocketWap = window.require('WAWap');
     window.Store.SearchContext = window.require('WAWebChatMessageSearch').getSearchContext;
     window.Store.DrawerManager = window.require('WAWebDrawerManager').DrawerManager;
@@ -109,7 +110,214 @@ exports.ExposeStore = () => {
         module[target.function] = modifiedFunction;
     };
 
-    window.injectToFunction({ module: 'WAWebBackendJobsCommon', function: 'mediaTypeFromProtobuf' }, (func, ...args) => { const [proto] = args; return proto.locationMessage ? null : func(...args); });
+    window.injectToFunction({
+        module: 'WAWebBackendJobsCommon',
+        function: 'mediaTypeFromProtobuf'
+    }, (func, ...args) => {
+        const [proto] = args;
+        if (proto.templateMessage?.hydratedTemplate) {
+            return func(proto.templateMessage.hydratedTemplate);
+        }
+        return proto.locationMessage ? null : func(...args);
+    });
 
-    window.injectToFunction({ module: 'WAWebE2EProtoUtils', function: 'typeAttributeFromProtobuf' }, (func, ...args) => { const [proto] = args; return proto.locationMessage || proto.groupInviteMessage ? 'text' : func(...args); });
+    window.injectToFunction({
+        module: 'WAWebE2EProtoUtils',
+        function: 'typeAttributeFromProtobuf'
+    }, (func, ...args) => {
+        const [proto] = args;
+
+        if (proto.ephemeralMessage) {
+            const { message } = proto.ephemeralMessage;
+            return message ? callback(func, [message]) : 'text';
+        }
+        if (proto.deviceSentMessage) {
+            const { message } = proto.deviceSentMessage;
+            return message ? callback(func, [message]) : 'text';
+        }
+        if (proto.viewOnceMessage) {
+            const { message } = proto.viewOnceMessage;
+            return message ? callback(func, [message]) : 'text';
+        }
+
+        if (
+            proto.buttonsMessage?.headerType === 1 ||
+            proto.buttonsMessage?.headerType === 2
+        ) {
+            return 'text';
+        }
+
+        if (proto.listMessage) {
+            return 'text';
+        }
+        
+        if (proto.templateMessage?.hydratedTemplate) {
+            const keys = Object.keys(proto.templateMessage?.hydratedTemplate);
+            const messagePart = [
+                'documentMessage',
+                'imageMessage',
+                'locationMessage',
+                'videoMessage',
+            ];
+            if (messagePart.some((part) => keys.includes(part))) {
+                return 'media';
+            }
+            return 'text';
+        }
+
+        return proto.locationMessage || proto.groupInviteMessage ? 'text' : func(...args);
+    });
+
+    window.injectToFunction({
+        module: 'WAWebE2EProtoGenerator',
+        function: 'createMsgProtobuf'
+    }, (func, args) => {
+        const [message] = args;
+        const proto = func(...args);
+        if (message.hydratedButtons) {
+            const hydratedTemplate = {
+                hydratedButtons: message.hydratedButtons,
+            };
+
+            if (message.footer) {
+                hydratedTemplate.hydratedFooterText = message.footer;
+            }
+
+            if (message.caption) {
+                hydratedTemplate.hydratedContentText = message.caption;
+            }
+
+            if (message.title) {
+                hydratedTemplate.hydratedTitleText = message.title;
+            }
+
+            if (proto.conversation) {
+                hydratedTemplate.hydratedContentText = proto.conversation;
+                delete proto.conversation;
+            } else if (proto.extendedTextMessage?.text) {
+                hydratedTemplate.hydratedContentText = proto.extendedTextMessage.text;
+                delete proto.extendedTextMessage;
+            } else {
+                // Search media part in message
+                let found;
+                const mediaPart = [
+                    'documentMessage',
+                    'imageMessage',
+                    'locationMessage',
+                    'videoMessage',
+                ];
+                for (const part of mediaPart) {
+                    if (part in proto) {
+                        found = part;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    return proto;
+                }
+
+                // Media message doesn't allow title
+                hydratedTemplate[found] = proto[found];
+
+                // Copy title to caption if not setted
+                if (
+                    hydratedTemplate.hydratedTitleText &&
+                    !hydratedTemplate.hydratedContentText
+                ) {
+                    hydratedTemplate.hydratedContentText =
+                        hydratedTemplate.hydratedTitleText;
+                }
+
+                // Remove title for media messages
+                delete hydratedTemplate.hydratedTitleText;
+
+                if (found === 'locationMessage') {
+                    if (
+                        !hydratedTemplate.hydratedContentText &&
+                        (message[found].name || message[found].address)
+                    ) {
+                        hydratedTemplate.hydratedContentText =
+                            message[found].name && message[found].address
+                                ? `${message[found].name}\n${message[found].address}`
+                                : message[found].name || message[found].address || '';
+                    }
+                }
+
+                // Ensure a content text;
+                hydratedTemplate.hydratedContentText =
+                    hydratedTemplate.hydratedContentText || ' ';
+
+                delete proto[found];
+            }
+
+            proto.templateMessage = {
+                hydratedTemplate,
+            };
+        }
+
+        return proto;
+    });
+
+    window.injectToFunction({
+        module: 'WAWebBackendJobsCommon',
+        function: 'encodeMaybeMediaType',
+    }, (func, args) => {
+        const [type] = args;
+        if (type === 'button') {
+            return window.require('WAWap').DROP_ATTR;
+        }
+        return func(...args);
+    });
+
+    window.injectToFunction({
+        module: 'WAWebSendMsgCreateFanoutStanza',
+        function: 'createFanoutMsgStanza'
+    }, async (func, ...args) => {
+        const [, proto] = args;
+
+        let buttonNode = null;
+
+        if (proto.buttonsMessage) {
+            buttonNode = window.Store.SocketSmax('buttons');
+        } else if (proto.listMessage) {
+            const listType = proto.listMessage.listType || 0;
+
+            const types = ['unknown', 'single_select', 'product_list'];
+
+            buttonNode = window.Store.SocketSmax('list', {
+                v: '2',
+                type: types[listType],
+            });
+        }
+
+        const node = await func(...args);
+
+        if (!buttonNode) {
+            return node;
+        }
+
+        const content = node.content;
+
+        let bizNode = content.find((c) => c.tag === 'biz');
+
+        if (!bizNode) {
+            bizNode = window.Store.SocketSmax('biz', {}, null);
+            content.push(bizNode);
+        }
+
+        let hasButtonNode = false;
+
+        if (Array.isArray(bizNode.content)) {
+            hasButtonNode = !!bizNode.content.find((c) => c.tag === buttonNode?.tag);
+        } else {
+            bizNode.content = [];
+        }
+
+        if (!hasButtonNode) {
+            bizNode.content.push(buttonNode);
+        }
+
+        return node;
+    });
 };

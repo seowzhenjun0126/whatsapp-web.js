@@ -4,6 +4,7 @@ import { RequestInit } from 'node-fetch'
 import { ButtonSpec, FormattedButtonSpec } from './src/structures/Buttons'
 import { FormattedSectionSpec, SectionSpec } from './src/structures/List'
 import * as puppeteer from 'puppeteer'
+import InterfaceController from './src/util/InterfaceController'
 
 declare namespace WAWebJS {
 
@@ -18,6 +19,9 @@ declare namespace WAWebJS {
 
         /** Puppeteer browser running WhatsApp Web */
         pupBrowser?: puppeteer.Browser
+
+        /** Client interactivity interface */
+        interface?: InterfaceController
 
         /**Accepts an invitation to join a group */
         acceptInvite(inviteCode: string): Promise<string>
@@ -37,12 +41,8 @@ declare namespace WAWebJS {
         /** Unpins the Chat and returns its new Pin state */
         unpinChat(chatId: string): Promise<boolean>
 
-        /**
-         * Create a new group
-         * @param name group title
-         * @param participants an array of Contacts or contact IDs to add to the group
-         */
-        createGroup(name: string, participants: Contact[] | string[]): Promise<CreateGroupResult>
+        /** Creates a new group */
+        createGroup(title: string, participants?: string | Contact | Contact[] | string[], options?: CreateGroupOptions): Promise<CreateGroupResult|string>
 
         /** Closes the client */
         destroy(): Promise<void>
@@ -62,6 +62,9 @@ declare namespace WAWebJS {
         /** Get contact instance by ID */
         getContactById(contactId: string): Promise<Contact>
 
+        /** Get message by ID */
+        getMessageById(messageId: string): Promise<Message>
+
         /** Get all current contact instances */
         getContacts(): Promise<Contact[]>
         
@@ -73,6 +76,9 @@ declare namespace WAWebJS {
 
         /** Get all current Labels  */
         getLabels(): Promise<Label[]>
+        
+        /** Change labels in chats  */
+        addOrRemoveLabels(labelIds: Array<number|string>, chatIds: Array<string>): Promise<void>
 
         /** Get Label instance by ID */
         getLabelById(labelId: string): Promise<Label>
@@ -111,6 +117,14 @@ declare namespace WAWebJS {
          */
         muteChat(chatId: string, unmuteDate?: Date): Promise<void>
 
+        /**
+         * Request authentication via pairing code instead of QR code
+         * @param phoneNumber - Phone number in international, symbol-free format (e.g. 12025550108 for US, 551155501234 for Brazil)
+         * @param showNotification - Show notification to pair on phone number
+         * @returns {Promise<string>} - Returns a pairing code in format "ABCDEFGH"
+         */
+        requestPairingCode(phoneNumber: string, showNotification = true): Promise<string>
+
         /** Force reset of connection state for the client */
         resetState(): Promise<void>
 
@@ -143,6 +157,27 @@ declare namespace WAWebJS {
          * @param displayName New display name
          */
         setDisplayName(displayName: string): Promise<boolean>
+        
+        /**
+         * Changes the autoload Audio
+         * @param flag true/false on or off
+         */
+        setAutoDownloadAudio(flag: boolean): Promise<void>
+        /**
+         * Changes the autoload Documents
+         * @param flag true/false on or off
+         */
+        setAutoDownloadDocuments(flag: boolean): Promise<void>
+        /**
+         * Changes the autoload Photos
+         * @param flag true/false on or off
+         */
+        setAutoDownloadPhotos(flag: boolean): Promise<void>
+        /**
+         * Changes the autoload Videos
+         * @param flag true/false on or off
+         */
+        setAutoDownloadVideos(flag: boolean): Promise<void>
                 
         /** Changes and returns the archive state of the Chat */
         unarchiveChat(chatId: string): Promise<boolean>
@@ -155,6 +190,15 @@ declare namespace WAWebJS {
 
         /** Deletes the current user's profile picture */
         deleteProfilePicture(): Promise<boolean>
+
+        /** Gets an array of membership requests */
+        getGroupMembershipRequests: (groupId: string) => Promise<Array<GroupMembershipRequest>>
+
+        /** Approves membership requests if any */
+        approveGroupMembershipRequests: (groupId: string, options: MembershipRequestActionOptions) => Promise<Array<MembershipRequestActionResult>>;
+
+        /** Rejects membership requests if any */
+        rejectGroupMembershipRequests: (groupId: string, options: MembershipRequestActionOptions) => Promise<Array<MembershipRequestActionResult>>;
 
         /** Generic event */
         on(event: string, listener: (...args: any) => void): this
@@ -185,7 +229,7 @@ declare namespace WAWebJS {
         /** Emitted when the client has been disconnected */
         on(event: 'disconnected', listener: (
             /** reason that caused the disconnect */
-            reason: WAState | "NAVIGATION"
+            reason: WAState | "LOGOUT"
         ) => void): this
 
         /** Emitted when a user joins the chat via invite link or is added by an admin */
@@ -202,6 +246,15 @@ declare namespace WAWebJS {
 
         /** Emitted when a current user is promoted to an admin or demoted to a regular user */
         on(event: 'group_admin_changed', listener: (
+            /** GroupNotification with more information about the action */
+            notification: GroupNotification
+        ) => void): this
+
+        /**
+         * Emitted when some user requested to join the group
+         * that has the membership approval mode turned on
+         */
+        on(event: 'group_membership_request', listener: (
             /** GroupNotification with more information about the action */
             notification: GroupNotification
         ) => void): this
@@ -244,6 +297,16 @@ declare namespace WAWebJS {
             ack: MessageAck
         ) => void): this
         
+        /** Emitted when an ack event occurrs on message type */
+        on(event: 'message_edit', listener: (
+            /** The message that was affected */
+            message: Message,
+            /** New text message */
+            newBody: String,
+            /** Prev text message */
+            prevBody: String
+        ) => void): this
+        
         /** Emitted when a chat unread count changes */
         on(event: 'unread_count', listener: (
             /** The chat that was affected */
@@ -253,6 +316,12 @@ declare namespace WAWebJS {
         /** Emitted when a new message is created, which may include the current user's own messages */
         on(event: 'message_create', listener: (
             /** The message that was created */
+            message: Message
+        ) => void): this
+        
+        /** Emitted when a new message ciphertext is received  */
+        on(event: 'message_ciphertext', listener: (
+            /** The message that was ciphertext */
             message: Message
         ) => void): this
 
@@ -367,6 +436,10 @@ declare namespace WAWebJS {
         puppeteer?: puppeteer.PuppeteerNodeLaunchOptions & puppeteer.ConnectOptions
 		/** Determines how to save and restore sessions. Will use LegacySessionAuth if options.session is set. Otherwise, NoAuth will be used. */
         authStrategy?: AuthStrategy,
+        /** The version of WhatsApp Web to use. Use options.webVersionCache to configure how the version is retrieved. */
+        webVersion?: string,
+        /**  Determines how to retrieve the WhatsApp Web version specified in options.webVersion. */
+        webVersionCache?: WebCacheOptions,
         /** How many times should the qrcode be refreshed before giving up
 		 * @default 0 (disabled) */
 		qrMaxRetries?: number,
@@ -387,12 +460,30 @@ declare namespace WAWebJS {
         /** User agent to use in puppeteer.
          * @default 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.109 Safari/537.36' */
         userAgent?: string
-        /** Ffmpeg path to use when formating videos to webp while sending stickers 
+        /** Ffmpeg path to use when formatting videos to webp while sending stickers 
          * @default 'ffmpeg' */
         ffmpegPath?: string,
         /** Object with proxy autentication requirements @default: undefined */
         proxyAuthentication?: {username: string, password: string} | undefined
     }
+
+    export interface LocalWebCacheOptions {
+        type: 'local',
+        path?: string,
+        strict?: boolean
+    }
+
+    export interface RemoteWebCacheOptions {
+        type: 'remote',
+        remotePath: string,
+        strict?: boolean
+    }
+
+    export interface NoWebCacheOptions {
+        type: 'none'
+    }
+
+    export type WebCacheOptions = NoWebCacheOptions | LocalWebCacheOptions | RemoteWebCacheOptions;
 
     /**
      * Base class which all authentication strategies extend
@@ -486,14 +577,47 @@ declare namespace WAWebJS {
         plugged: boolean,
     }
 
+    /** An object that handles options for group creation */
+    export interface CreateGroupOptions {
+        /**
+         * The number of seconds for the messages to disappear in the group,
+         * won't take an effect if the group is been creating with myself only
+         * @default 0
+         */
+        messageTimer?: number
+        /**
+         * The ID of a parent community group to link the newly created group with,
+         * won't take an effect if the group is been creating with myself only
+         */
+        parentGroupId?: string
+        /** If true, the inviteV4 will be sent to those participants
+         * who have restricted others from being automatically added to groups,
+         * otherwise the inviteV4 won't be sent
+         * @default true
+         */
+        autoSendInviteV4?: boolean,
+        /**
+         * The comment to be added to an inviteV4 (empty string by default)
+         * @default ''
+         */
+        comment?: string
+    }
+
+    /** An object that handles the result for createGroup method */
     export interface CreateGroupResult {
-        /** ID for the group that was just created */
-        gid: string,
-        /** participants that were not added to the group. 
-         * Keys represent the ID for participant that was not added and its value is a status code
-         * that represents the reason why participant could not be added. 
-         * This is usually 403 if the user's privacy settings don't allow you to add them to groups. */
-        missingParticipants: Record<string, string>
+        /** A group title */
+        title: string;
+        /** An object that handles the newly created group ID */
+        gid: ChatId;
+        /** An object that handles the result value for each added to the group participant */
+        participants: {
+            [participantId: string]: {
+                statusCode: number,
+                message: string,
+                isGroupCreator: boolean,
+                isInviteV4Sent: boolean
+            };
+        };
     }
 
     export interface GroupNotification {
@@ -543,15 +667,18 @@ declare namespace WAWebJS {
         AUTHENTICATION_FAILURE = 'auth_failure',
         READY = 'ready',
         MESSAGE_RECEIVED = 'message',
+        MESSAGE_CIPHERTEXT = 'message_ciphertext',
         MESSAGE_CREATE = 'message_create',
         MESSAGE_REVOKED_EVERYONE = 'message_revoke_everyone',
         MESSAGE_REVOKED_ME = 'message_revoke_me',
         MESSAGE_ACK = 'message_ack',
+        MESSAGE_EDIT = 'message_edit',
         MEDIA_UPLOADED = 'media_uploaded',
         CONTACT_CHANGED = 'contact_changed',
         GROUP_JOIN = 'group_join',
         GROUP_LEAVE = 'group_leave',
         GROUP_ADMIN_CHANGED = 'group_admin_changed',
+        GROUP_MEMBERSHIP_REQUEST = 'group_membership_request',
         GROUP_UPDATE = 'group_update',
         QR_RECEIVED = 'qr',
         LOADING_SCREEN = 'loading_screen',
@@ -622,6 +749,7 @@ declare namespace WAWebJS {
         PROTOCOL = 'protocol',
         REACTION = 'reaction',
         TEMPLATE_BUTTON_REPLY = 'template_button_reply',
+        POLL_CREATION = 'poll_creation',
     }
 
     /** Client status */
@@ -743,7 +871,16 @@ declare namespace WAWebJS {
         /** MediaKey that represents the sticker 'ID' */
         mediaKey?: string,
         /** Indicates the mentions in the message body. */
-        mentionedIds: [],
+        mentionedIds: ChatId[],
+        /** Indicates whether there are group mentions in the message body */
+        groupMentions: {
+            groupSubject: string;
+            groupJid: {
+                server: string;
+                user: string;
+                _serialized: string;
+            };
+        }[],
         /** Unix timestamp for when the message was created */
         timestamp: number,
         /**
@@ -769,6 +906,10 @@ declare namespace WAWebJS {
         businessOwnerJid?: string,
         /** Product JID */
         productId?: string,
+        /** Last edit time */
+        latestEditSenderTimestampMs?: number,
+        /** Last edit message author */
+        latestEditMsgKey?: MessageId,
         /** Message buttons */
         dynamicReplyButtons?: object,
         /** Selected button ID */
@@ -777,6 +918,11 @@ declare namespace WAWebJS {
         selectedRowId?: string,
         /** Returns message in a raw format */
         rawData: object,
+        pollName: string,
+        /** Avaiaible poll voting options */
+        pollOptions: string[],
+        /** False for a single choice poll, true for a multiple choice poll */
+        allowMultipleAnswers: boolean,
         /* 
         * Reloads this Message object's data in-place with the latest values from WhatsApp Web. 
         * Note that the Message must still be in the web app cache for this to work, otherwise will return null.
@@ -794,6 +940,8 @@ declare namespace WAWebJS {
         getContact: () => Promise<Contact>,
         /** Returns the Contacts mentioned in this message */
         getMentions: () => Promise<Contact[]>,
+        /** Returns groups mentioned in this message */
+        getGroupMentions: () => Promise<GroupChat[]|[]>,
         /** Returns the quoted message, if any */
         getQuotedMessage: () => Promise<Message>,
         /** 
@@ -812,6 +960,10 @@ declare namespace WAWebJS {
         star: () => Promise<void>,
         /** Unstar this message */
         unstar: () => Promise<void>,
+        /** Pins the message (group admins can pin messages of all group members) */
+        pin: (duration: number) => Promise<boolean>,
+        /** Unpins the message (group admins can unpin messages of all group members) */
+        unpin: () => Promise<boolean>,
         /** Get information about message delivery status */
         getInfo: () => Promise<MessageInfo | null>,
         /**
@@ -826,6 +978,8 @@ declare namespace WAWebJS {
          * Gets the reactions associated with the given message
          */
         getReactions: () => Promise<ReactionList[]>,
+        /** Edits the current message */
+        edit: (content: MessageContent, options?: MessageEditOptions) => Promise<Message | null>,
     }
 
     /** ID that represents a message */
@@ -836,13 +990,46 @@ declare namespace WAWebJS {
         _serialized: string,
     }
 
+    /** Options for sending a location */
+    export interface LocationSendOptions {
+        /** Location name */
+        name?: string;
+        /** Location address */
+        address?: string;
+        /** URL address to be shown within a location message */
+        url?: string;
+    }
+
     /** Location information */
     export class Location {
-        description?: string | null
-        latitude: string
-        longitude: string
+        latitude: string;
+        longitude: string;
+        options?: LocationSendOptions;
         
-        constructor(latitude: number, longitude: number, description?: string)
+        constructor(latitude: number, longitude: number, options?: LocationSendOptions)
+    }
+
+    /** Poll send options */
+    export interface PollSendOptions {
+        /** False for a single choice poll, true for a multiple choice poll (false by default) */
+        allowMultipleAnswers?: boolean,
+        /**
+         * The custom message secret, can be used as a poll ID
+         * @note It has to be a unique vector with a length of 32
+         */
+        messageSecret: Array<number>|undefined
+    }
+
+    /** Represents a Poll on WhatsApp */
+    export class Poll {
+        pollName: string
+        pollOptions: Array<{
+            name: string,
+            localId: number
+        }>
+        options: PollSendOptions
+
+        constructor(pollName: string, pollOptions: Array<string>, options?: PollSendOptions)
     }
 
     export interface Label {
@@ -861,7 +1048,7 @@ declare namespace WAWebJS {
     export interface MessageSendOptions {
         /** Show links preview. Has no effect on multi-device accounts. */
         linkPreview?: boolean
-        /** Send audio as voice message */
+        /** Send audio as voice message with a generated waveform */
         sendAudioAsVoice?: boolean
         /** Send video as gif */
         sendVideoAsGif?: boolean
@@ -869,14 +1056,23 @@ declare namespace WAWebJS {
         sendMediaAsSticker?: boolean
         /** Send media as document */
         sendMediaAsDocument?: boolean
+        /** Send photo/video as a view once message */
+        isViewOnce?: boolean
         /** Automatically parse vCards and send them as contacts */
         parseVCards?: boolean
         /** Image or videos caption */
         caption?: string
         /** Id of the message that is being quoted (or replied to) */
         quotedMessageId?: string
-        /** Contacts that are being mentioned in the message */
-        mentions?: Contact[]
+        /** User IDs to mention in the message */
+        mentions?: string[]
+        /** An array of object that handle group mentions */
+        groupMentions?: {
+            /** The name of a group to mention (can be custom) */
+            subject: string,
+            /** The group ID, e.g.: 'XXXXXXXXXX@g.us' */
+            id: string
+        }[]
         /** Send 'seen' status */
         sendSeen?: boolean
         /** Media to be sent */
@@ -889,6 +1085,16 @@ declare namespace WAWebJS {
         stickerAuthor?: string
         /** Sticker categories, if sendMediaAsSticker is true */
         stickerCategories?: string[]
+    }
+
+    /** Options for editing a message */
+    export interface MessageEditOptions {
+        /** Show links preview. Has no effect on multi-device accounts. */
+        linkPreview?: boolean
+        /** Contacts that are being mentioned in the message */
+        mentions?: Contact[]
+        /** Extra options */
+        extra?: any
     }
 
     export interface MediaFromURLOptions {
@@ -924,7 +1130,7 @@ declare namespace WAWebJS {
         static fromUrl: (url: string, options?: MediaFromURLOptions) => Promise<MessageMedia>
     }
 
-    export type MessageContent = string | MessageMedia | Location | Contact | Contact[] | List | Buttons
+    export type MessageContent = string | MessageMedia | Location | Poll | Contact | Contact[] | List | Buttons
 
     /**
      * Represents a Contact on WhatsApp
@@ -1028,13 +1234,84 @@ declare namespace WAWebJS {
         user: string,
         _serialized: string,
     }
+    
+    export interface BusinessCategory {
+        id: string,
+        localized_display_name: string,
+    }
+
+    export interface BusinessHoursOfDay {
+        mode: string,
+        hours: number[] 
+    }
+    
+    export interface BusinessHours {
+        config: {
+            sun: BusinessHoursOfDay,
+            mon: BusinessHoursOfDay,
+            tue: BusinessHoursOfDay,
+            wed: BusinessHoursOfDay,
+            thu: BusinessHoursOfDay,
+            fri: BusinessHoursOfDay,
+        }
+        timezone: string,
+    }
+    
+    
 
     export interface BusinessContact extends Contact {
         /** 
          * The contact's business profile
-         * @todo add a more specific type for the object
          */
-        businessProfile: object
+        businessProfile: {
+            /** The contact's business profile id */
+            id: ContactId,
+
+            /** The contact's business profile tag */
+            tag: string,
+
+            /** The contact's business profile description */
+            description: string,
+
+            /** The contact's business profile categories */
+            categories: BusinessCategory[],
+
+            /** The contact's business profile options */
+            profileOptions: {
+                /** The contact's business profile commerce experience*/
+                commerceExperience: string,
+                
+                /** The contact's business profile cart options */
+                cartEnabled: boolean,
+            }
+
+            /** The contact's business profile email */
+            email: string,
+
+            /** The contact's business profile websites */
+            website: string[],
+
+            /** The contact's business profile latitude */
+            latitude: number,
+            
+            /** The contact's business profile longitude */
+            longitude: number,
+            
+            /** The contact's business profile work hours*/
+            businessHours: BusinessHours
+            
+            /** The contact's business profile address */
+            address: string,
+            
+            /** The contact's business profile facebook page */
+            fbPage: object,
+            
+            /** Indicate if the contact's business profile linked */
+            ifProfileLinked: boolean
+            
+            /** The contact's business profile coverPhoto */
+            coverPhoto: null | any,
+        }
     }
 
     export interface PrivateContact extends Contact {
@@ -1112,9 +1389,11 @@ declare namespace WAWebJS {
         /** Returns the Contact that corresponds to this Chat. */
         getContact: () => Promise<Contact>,
         /** Marks this Chat as unread */
-        markUnread: () => Promise<void>
+        markUnread: () => Promise<void>,
         /** Returns array of all Labels assigned to this Chat */
-        getLabels: () => Promise<Label[]>
+        getLabels: () => Promise<Label[]>,
+        /** Add or remove labels to this Chat */
+        changeLabels: (labelIds: Array<string | number>) => Promise<void>
     }
 
     export interface MessageSearchOptions {
@@ -1172,18 +1451,70 @@ declare namespace WAWebJS {
     export type ChangeParticipantsPermissions = 
         (participantIds: Array<string>) => Promise<{ status: number }>
 
-    /** Adds or removes a list of participants by ID to the group */
-    export type ChangeGroupParticipants = 
-        (participantIds: Array<string>) => Promise<{
-            status: number;
-            participants: Array<{
-                [key: string]: {
-                    code: number
-                }
-            }>
-         } & {
-             [key: string]: number;
-         }>
+    /** An object that handles the result for addParticipants method */
+    export interface AddParticipantsResult {
+        [participantId: string]: {
+            code: number;
+            message: string;
+            isInviteV4Sent: boolean,
+        }
+    }
+
+    /** An object that handles options for adding participants */
+    export interface AddParticipantsOptions {
+        /**
+         * The number of milliseconds to wait before adding the next participant.
+         * If it is an array, a random sleep time between the sleep[0] and sleep[1] values will be added
+         * (the difference must be >=100 ms, otherwise, a random sleep time between sleep[1] and sleep[1] + 100
+         * will be added). If sleep is a number, a sleep time equal to its value will be added
+         * @default [250,500]
+         */
+        sleep?: Array<number>|number,
+        /**
+         * If true, the inviteV4 will be sent to those participants
+         * who have restricted others from being automatically added to groups,
+         * otherwise the inviteV4 won't be sent
+         * @default true
+         */
+        autoSendInviteV4?: boolean,
+        /**
+         * The comment to be added to an inviteV4 (empty string by default)
+         * @default ''
+         */
+        comment?: string
+    }
+
+    /** An object that handles the information about the group membership request */
+    export interface GroupMembershipRequest {
+        /** The wid of a user who requests to enter the group */
+        id: Object;
+        /** The wid of a user who created that request */
+        addedBy: Object;
+        /** The wid of a community parent group to which the current group is linked */
+        parentGroupId: Object | null;
+        /** The method used to create the request: NonAdminAdd/InviteLink/LinkedGroupJoin */
+        requestMethod: string,
+        /** The timestamp the request was created at */
+        t: number
+    }
+
+    /** An object that handles the result for membership request action */
+    export interface MembershipRequestActionResult {
+        /** User ID whos membership request was approved/rejected */
+        requesterId: Array<string> | string | null;
+        /** An error code that occurred during the operation for the participant */
+        error?: number;
+        /** A message with a result of membership request action */
+        message: string;
+    }
+
+    /** Options for performing a membership request action  */
+    export interface MembershipRequestActionOptions {
+        /** User ID/s who requested to join the group, if no value is provided, the method will search for all membership requests for that group */
+        requesterIds: Array<string> | string | null;
+        /** The number of milliseconds to wait before performing an operation for the next requester. If it is an array, a random sleep time between the sleep[0] and sleep[1] values will be added (the difference must be >=100 ms, otherwise, a random sleep time between sleep[1] and sleep[1] + 100 will be added). If sleep is a number, a sleep time equal to its value will be added. By default, sleep is an array with a value of [250, 500] */
+        sleep: Array<number> | number | null;
+    }
 
     export interface GroupChat extends Chat {
         /** Group owner */
@@ -1195,9 +1526,9 @@ declare namespace WAWebJS {
         /** Group participants */
         participants: Array<GroupParticipant>;
         /** Adds a list of participants by ID to the group */
-        addParticipants: ChangeGroupParticipants;
+        addParticipants: (participantIds: string | string[], options?: AddParticipantsOptions) => Promise<{ [key: string]: AddParticipantsResult } | string>;
         /** Removes a list of participants by ID to the group */
-        removeParticipants: ChangeGroupParticipants;
+        removeParticipants: (participantIds: string[]) => Promise<{ status: number }>;
         /** Promotes participants by IDs to admins */
         promoteParticipants: ChangeParticipantsPermissions;
         /** Demotes participants by IDs to regular users */
@@ -1206,17 +1537,34 @@ declare namespace WAWebJS {
         setSubject: (subject: string) => Promise<boolean>;
         /** Updates the group description */
         setDescription: (description: string) => Promise<boolean>;
-        /** Updates the group settings to only allow admins to send messages 
-         * @param {boolean} [adminsOnly=true] Enable or disable this option 
+        /** Updates the group settings to only allow admins to send messages
+         * @param {boolean} [adminsOnly=true] Enable or disable this option
          * @returns {Promise<boolean>} Returns true if the setting was properly updated. This can return false if the user does not have the necessary permissions.
          */
         setMessagesAdminsOnly: (adminsOnly?: boolean) => Promise<boolean>;
         /**
          * Updates the group settings to only allow admins to edit group info (title, description, photo).
-         * @param {boolean} [adminsOnly=true] Enable or disable this option 
+         * @param {boolean} [adminsOnly=true] Enable or disable this option
          * @returns {Promise<boolean>} Returns true if the setting was properly updated. This can return false if the user does not have the necessary permissions.
          */
         setInfoAdminsOnly: (adminsOnly?: boolean) => Promise<boolean>;
+        /**
+         * Gets an array of membership requests
+         * @returns {Promise<Array<GroupMembershipRequest>>} An array of membership requests
+         */
+        getGroupMembershipRequests: () => Promise<Array<GroupMembershipRequest>>;
+        /**
+         * Approves membership requests if any
+         * @param {MembershipRequestActionOptions} options Options for performing a membership request action
+         * @returns {Promise<Array<MembershipRequestActionResult>>} Returns an array of requester IDs whose membership requests were approved and an error for each requester, if any occurred during the operation. If there are no requests, an empty array will be returned
+         */
+        approveGroupMembershipRequests: (options: MembershipRequestActionOptions) => Promise<Array<MembershipRequestActionResult>>;
+        /**
+         * Rejects membership requests if any
+         * @param {MembershipRequestActionOptions} options Options for performing a membership request action
+         * @returns {Promise<Array<MembershipRequestActionResult>>} Returns an array of requester IDs whose membership requests were rejected and an error for each requester, if any occurred during the operation. If there are no requests, an empty array will be returned
+         */
+        rejectGroupMembershipRequests: (options: MembershipRequestActionOptions) => Promise<Array<MembershipRequestActionResult>>;
         /** Gets the invite code for a specific group */
         getInviteCode: () => Promise<string>;
         /** Invalidates the current group invite code and generates a new one */

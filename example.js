@@ -1,23 +1,34 @@
-const { Client, Location, List, Buttons, LocalAuth } = require('./index');
+const { Client, Location, Poll, List, Buttons, LocalAuth } = require('./index');
 
 const client = new Client({
     authStrategy: new LocalAuth(),
     // proxyAuthentication: { username: 'username', password: 'password' },
     puppeteer: { 
         // args: ['--proxy-server=proxy-server-that-requires-authentication.example.com'],
-        headless: false
+        headless: true,
     }
 });
 
+// client initialize does not finish at ready now.
 client.initialize();
 
 client.on('loading_screen', (percent, message) => {
     console.log('LOADING SCREEN', percent, message);
 });
 
-client.on('qr', (qr) => {
+// Pairing code only needs to be requested once
+let pairingCodeRequested = false;
+client.on('qr', async (qr) => {
     // NOTE: This event will not be fired if a session is specified.
     console.log('QR RECEIVED', qr);
+
+    // paiuting code example
+    const pairingCodeEnabled = false;
+    if (pairingCodeEnabled && !pairingCodeRequested) {
+        const pairingCode = await client.requestPairingCode('96170100100'); // enter the target phone number
+        console.log('Pairing code enabled, code: '+ pairingCode);
+        pairingCodeRequested = true;
+    }
 });
 
 client.on('authenticated', () => {
@@ -72,6 +83,9 @@ client.on('message', async msg => {
     } else if (msg.body.startsWith('!echo ')) {
         // Replies with the same message
         msg.reply(msg.body.slice(6));
+    } else if (msg.body.startsWith('!preview ')) {
+        const text = msg.body.slice(9);
+        msg.reply(text, null, { linkPreview: true });
     } else if (msg.body.startsWith('!desc ')) {
         // Change the group description
         let chat = await msg.getChat();
@@ -97,6 +111,78 @@ client.on('message', async msg => {
         } catch (e) {
             msg.reply('That invite code seems to be invalid.');
         }
+    } else if (msg.body.startsWith('!addmembers')) {
+        const group = await msg.getChat();
+        const result = await group.addParticipants(['number1@c.us', 'number2@c.us', 'number3@c.us']);
+        /**
+         * The example of the {@link result} output:
+         *
+         * {
+         *   'number1@c.us': {
+         *     code: 200,
+         *     message: 'The participant was added successfully',
+         *     isInviteV4Sent: false
+         *   },
+         *   'number2@c.us': {
+         *     code: 403,
+         *     message: 'The participant can be added by sending private invitation only',
+         *     isInviteV4Sent: true
+         *   },
+         *   'number3@c.us': {
+         *     code: 404,
+         *     message: 'The phone number is not registered on WhatsApp',
+         *     isInviteV4Sent: false
+         *   }
+         * }
+         *
+         * For more usage examples:
+         * @see https://github.com/pedroslopez/whatsapp-web.js/pull/2344#usage-example1
+         */
+        console.log(result);
+    } else if (msg.body === '!creategroup') {
+        const partitipantsToAdd = ['number1@c.us', 'number2@c.us', 'number3@c.us'];
+        const result = await client.createGroup('Group Title', partitipantsToAdd);
+        /**
+         * The example of the {@link result} output:
+         * {
+         *   title: 'Group Title',
+         *   gid: {
+         *     server: 'g.us',
+         *     user: '1111111111',
+         *     _serialized: '1111111111@g.us'
+         *   },
+         *   participants: {
+         *     'botNumber@c.us': {
+         *       statusCode: 200,
+         *       message: 'The participant was added successfully',
+         *       isGroupCreator: true,
+         *       isInviteV4Sent: false
+         *     },
+         *     'number1@c.us': {
+         *       statusCode: 200,
+         *       message: 'The participant was added successfully',
+         *       isGroupCreator: false,
+         *       isInviteV4Sent: false
+         *     },
+         *     'number2@c.us': {
+         *       statusCode: 403,
+         *       message: 'The participant can be added by sending private invitation only',
+         *       isGroupCreator: false,
+         *       isInviteV4Sent: true
+         *     },
+         *     'number3@c.us': {
+         *       statusCode: 404,
+         *       message: 'The phone number is not registered on WhatsApp',
+         *       isGroupCreator: false,
+         *       isInviteV4Sent: false
+         *     }
+         *   }
+         * }
+         *
+         * For more usage examples:
+         * @see https://github.com/pedroslopez/whatsapp-web.js/pull/2344#usage-example2
+         */
+        console.log(result);
     } else if (msg.body === '!groupinfo') {
         let chat = await msg.getChat();
         if (chat.isGroup) {
@@ -146,20 +232,77 @@ client.on('message', async msg => {
             const attachmentData = await quotedMsg.downloadMedia();
             client.sendMessage(msg.from, attachmentData, { caption: 'Here\'s your requested media.' });
         }
+        if (quotedMsg.hasMedia && quotedMsg.type === 'audio') {
+            const audio = await quotedMsg.downloadMedia();
+            await client.sendMessage(msg.from, audio, { sendAudioAsVoice: true });
+        }
+    } else if (msg.body === '!isviewonce' && msg.hasQuotedMsg) {
+        const quotedMsg = await msg.getQuotedMessage();
+        if (quotedMsg.hasMedia) {
+            const media = await quotedMsg.downloadMedia();
+            await client.sendMessage(msg.from, media, { isViewOnce: true });
+        }
     } else if (msg.body === '!location') {
-        msg.reply(new Location(37.422, -122.084, 'Googleplex\nGoogle Headquarters'));
+        // only latitude and longitude
+        await msg.reply(new Location(37.422, -122.084));
+        // location with name only
+        await msg.reply(new Location(37.422, -122.084, { name: 'Googleplex' }));
+        // location with address only
+        await msg.reply(new Location(37.422, -122.084, { address: '1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA' }));
+        // location with name, address and url
+        await msg.reply(new Location(37.422, -122.084, { name: 'Googleplex', address: '1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA', url: 'https://google.com' }));
     } else if (msg.location) {
         msg.reply(msg.location);
     } else if (msg.body.startsWith('!status ')) {
         const newStatus = msg.body.split(' ')[1];
         await client.setStatus(newStatus);
         msg.reply(`Status was updated to *${newStatus}*`);
-    } else if (msg.body === '!mention') {
-        const contact = await msg.getContact();
+    } else if (msg.body === '!mentionUsers') {
         const chat = await msg.getChat();
-        chat.sendMessage(`Hi @${contact.number}!`, {
-            mentions: [contact]
+        const userNumber = 'XXXXXXXXXX';
+        /**
+         * To mention one user you can pass user's ID to 'mentions' property as is,
+         * without wrapping it in Array, and a user's phone number to the message body:
+         */
+        await chat.sendMessage(`Hi @${userNumber}`, {
+            mentions: userNumber + '@c.us'
         });
+        // To mention a list of users:
+        await chat.sendMessage(`Hi @${userNumber}, @${userNumber}`, {
+            mentions: [userNumber + '@c.us', userNumber + '@c.us']
+        });
+    } else if (msg.body === '!mentionGroups') {
+        const chat = await msg.getChat();
+        const groupId = 'YYYYYYYYYY@g.us';
+        /**
+         * Sends clickable group mentions, the same as user mentions.
+         * When the mentions are clicked, it opens a chat with the mentioned group.
+         * The 'groupMentions.subject' can be custom
+         * 
+         * @note The user that does not participate in the mentioned group,
+         * will not be able to click on that mentioned group, the same if the group does not exist
+         *
+         * To mention one group:
+         */
+        await chat.sendMessage(`Check the last message here: @${groupId}`, {
+            groupMentions: { subject: 'GroupSubject', id: groupId }
+        });
+        // To mention a list of groups:
+        await chat.sendMessage(`Check the last message in these groups: @${groupId}, @${groupId}`, {
+            groupMentions: [
+                { subject: 'FirstGroup', id: groupId },
+                { subject: 'SecondGroup', id: groupId }
+            ]
+        });
+    } else if (msg.body === '!getGroupMentions') {
+        // To get group mentions from a message:
+        const groupId = 'ZZZZZZZZZZ@g.us';
+        const msg = await client.sendMessage('chatId', `Check the last message here: @${groupId}`, {
+            groupMentions: { subject: 'GroupSubject', id: groupId }
+        });
+        /** {@link groupMentions} is an array of `GroupChat` */
+        const groupMentions = await msg.getGroupMentions();
+        console.log(groupMentions);
     } else if (msg.body === '!delete') {
         if (msg.hasQuotedMsg) {
             const quotedMsg = await msg.getQuotedMessage();
@@ -211,26 +354,132 @@ client.on('message', async msg => {
         client.sendMessage(msg.from, button);
     } else if (msg.body === '!list') {
         let sections = [
-            {
-                title: 'Secton title',
-                rows: [
-                    {title:'ListItem1', description: 'desc'},
-                    {title: 'Try clicking me (id: test)', id: 'test'}
-                ]
-            }
+            { title: 'sectionTitle', rows: [{ title: 'ListItem1', description: 'desc' }, { title: 'ListItem2' }] }
         ];
-        let list = new List('List body', 'btnText', sections, 'Custom title', 'custom footer, google.com');
-        await client.sendMessage(msg.from, list);
+        let list = new List('List body', 'btnText', sections, 'Title', 'footer');
+        client.sendMessage(msg.from, list);
     } else if (msg.body === '!reaction') {
-        await msg.react('👍');
+        msg.react('👍');
+    } else if (msg.body === '!sendpoll') {
+        /** By default the poll is created as a single choice poll: */
+        await msg.reply(new Poll('Winter or Summer?', ['Winter', 'Summer']));
+        /** If you want to provide a multiple choice poll, add allowMultipleAnswers as true: */
+        await msg.reply(new Poll('Cats or Dogs?', ['Cats', 'Dogs'], { allowMultipleAnswers: true }));
+        /**
+         * You can provide a custom message secret, it can be used as a poll ID:
+         * @note It has to be a unique vector with a length of 32
+         */
+        await msg.reply(
+            new Poll('Cats or Dogs?', ['Cats', 'Dogs'], {
+                messageSecret: [
+                    1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                ]
+            })
+        );
+    } else if (msg.body === '!edit') {
+        if (msg.hasQuotedMsg) {
+            const quotedMsg = await msg.getQuotedMessage();
+            if (quotedMsg.fromMe) {
+                quotedMsg.edit(msg.body.replace('!edit', ''));
+            } else {
+                msg.reply('I can only edit my own messages');
+            }
+        }
+    } else if (msg.body === '!updatelabels') {
+        const chat = await msg.getChat();
+        await chat.changeLabels([0, 1]);
+    } else if (msg.body === '!addlabels') {
+        const chat = await msg.getChat();
+        let labels = (await chat.getLabels()).map((l) => l.id);
+        labels.push('0');
+        labels.push('1');
+        await chat.changeLabels(labels);
+    } else if (msg.body === '!removelabels') {
+        const chat = await msg.getChat();
+        await chat.changeLabels([]);
+    } else if (msg.body === '!approverequest') {
+        /**
+         * Presented an example for membership request approvals, the same examples are for the request rejections.
+         * To approve the membership request from a specific user:
+         */
+        await client.approveGroupMembershipRequests(msg.from, { requesterIds: 'number@c.us' });
+        /** The same for execution on group object (no need to provide the group ID): */
+        const group = await msg.getChat();
+        await group.approveGroupMembershipRequests({ requesterIds: 'number@c.us' });
+        /** To approve several membership requests: */
+        const approval = await client.approveGroupMembershipRequests(msg.from, {
+            requesterIds: ['number1@c.us', 'number2@c.us']
+        });
+        /**
+         * The example of the {@link approval} output:
+         * [
+         *   {
+         *     requesterId: 'number1@c.us',
+         *     message: 'Rejected successfully'
+         *   },
+         *   {
+         *     requesterId: 'number2@c.us',
+         *     error: 404,
+         *     message: 'ParticipantRequestNotFoundError'
+         *   }
+         * ]
+         *
+         */
+        console.log(approval);
+        /** To approve all the existing membership requests (simply don't provide any user IDs): */
+        await client.approveGroupMembershipRequests(msg.from);
+        /** To change the sleep value to 300 ms: */
+        await client.approveGroupMembershipRequests(msg.from, {
+            requesterIds: ['number1@c.us', 'number2@c.us'],
+            sleep: 300
+        });
+        /** To change the sleep value to random value between 100 and 300 ms: */
+        await client.approveGroupMembershipRequests(msg.from, {
+            requesterIds: ['number1@c.us', 'number2@c.us'],
+            sleep: [100, 300]
+        });
+        /** To explicitly disable the sleep: */
+        await client.approveGroupMembershipRequests(msg.from, {
+            requesterIds: ['number1@c.us', 'number2@c.us'],
+            sleep: null
+        });
+    } else if (msg.body === '!pinmsg') {
+        /**
+         * Pins a message in a chat, a method takes a number in seconds for the message to be pinned.
+         * WhatsApp default values for duration to pass to the method are:
+         * 1. 86400 for 24 hours
+         * 2. 604800 for 7 days
+         * 3. 2592000 for 30 days
+         * You can pass your own value:
+         */
+        const result = await msg.pin(60); // Will pin a message for 1 minute
+        console.log(result); // True if the operation completed successfully, false otherwise
     }
 });
 
-client.on('message_create', (msg) => {
+client.on('message_create', async (msg) => {
     // Fired on all message creations, including your own
     if (msg.fromMe) {
         // do stuff here
     }
+
+    // Unpins a message
+    if (msg.fromMe && msg.body.startsWith('!unpin')) {
+        const pinnedMsg = await msg.getQuotedMessage();
+        if (pinnedMsg) {
+            // Will unpin a message
+            const result = await pinnedMsg.unpin();
+            console.log(result); // True if the operation completed successfully, false otherwise
+        }
+    }
+});
+
+client.on('message_ciphertext', (msg) => {
+    // Receiving new incoming messages that have been encrypted
+    // msg.type === 'ciphertext'
+    msg.body = 'Waiting for this message. Check your phone.';
+    
+    // do stuff here
 });
 
 client.on('message_revoke_everyone', async (after, before) => {
@@ -308,28 +557,28 @@ client.on('contact_changed', async (message, oldId, newId, isContact) => {
         `Their new phone number is ${newId.slice(0, -5)}.\n`);
 
     /**
-     * Information about the {@name message}:
+     * Information about the @param {message}:
      * 
      * 1. If a notification was emitted due to a group participant changing their phone number:
-     * {@name message.author} is a participant's id before the change.
-     * {@name message.recipients[0]} is a participant's id after the change (a new one).
+     * @param {message.author} is a participant's id before the change.
+     * @param {message.recipients[0]} is a participant's id after the change (a new one).
      * 
      * 1.1 If the contact who changed their number WAS in the current user's contact list at the time of the change:
-     * {@name message.to} is a group chat id the event was emitted in.
-     * {@name message.from} is a current user's id that got an notification message in the group.
-     * Also the {@name message.fromMe} is TRUE.
+     * @param {message.to} is a group chat id the event was emitted in.
+     * @param {message.from} is a current user's id that got an notification message in the group.
+     * Also the @param {message.fromMe} is TRUE.
      * 
      * 1.2 Otherwise:
-     * {@name message.from} is a group chat id the event was emitted in.
-     * {@name message.to} is @type {undefined}.
-     * Also {@name message.fromMe} is FALSE.
+     * @param {message.from} is a group chat id the event was emitted in.
+     * @param {message.to} is @type {undefined}.
+     * Also @param {message.fromMe} is FALSE.
      * 
      * 2. If a notification was emitted due to a contact changing their phone number:
-     * {@name message.templateParams} is an array of two user's ids:
+     * @param {message.templateParams} is an array of two user's ids:
      * the old (before the change) and a new one, stored in alphabetical order.
-     * {@name message.from} is a current user's id that has a chat with a user,
+     * @param {message.from} is a current user's id that has a chat with a user,
      * whos phone number was changed.
-     * {@name message.to} is a user's id (after the change), the current user has a chat with.
+     * @param {message.to} is a user's id (after the change), the current user has a chat with.
      */
 });
 
@@ -343,4 +592,30 @@ client.on('group_admin_changed', (notification) => {
     } else if (notification.type === 'demote')
         /** Emitted when a current user is demoted to a regular user. */
         console.log(`You were demoted by ${notification.author}`);
+});
+
+client.on('group_membership_request', async (notification) => {
+    /**
+     * The example of the {@link notification} output:
+     * {
+     *     id: {
+     *         fromMe: false,
+     *         remote: 'groupId@g.us',
+     *         id: '123123123132132132',
+     *         participant: 'number@c.us',
+     *         _serialized: 'false_groupId@g.us_123123123132132132_number@c.us'
+     *     },
+     *     body: '',
+     *     type: 'created_membership_requests',
+     *     timestamp: 1694456538,
+     *     chatId: 'groupId@g.us',
+     *     author: 'number@c.us',
+     *     recipientIds: []
+     * }
+     *
+     */
+    console.log(notification);
+    /** You can approve or reject the newly appeared membership request: */
+    await client.approveGroupMembershipRequestss(notification.chatId, notification.author);
+    await client.rejectGroupMembershipRequests(notification.chatId, notification.author);
 });

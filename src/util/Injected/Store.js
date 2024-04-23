@@ -92,6 +92,14 @@ exports.ExposeStore = () => {
         window.Store.Chat.findImpl = window.Store.Chat._find;
     }
 
+    // Find Template models
+    window.Store.TemplateButtonModel = window.require('WAWebTemplateButtonModel');
+    window.Store.TemplateButtonCollection = window.require('WAWebTemplateButtonCollection').TemplateButtonCollection;
+
+    // Find quick reply models
+    window.Store.ReplyButtonModel = window.require('WAWebButtonModel');
+    window.Store.ButtonCollection = window.require('WAWebButtonCollection').ButtonCollection;
+
     /**
      * Target options object description
      * @typedef {Object} TargetOptions

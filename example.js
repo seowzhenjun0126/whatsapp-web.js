@@ -36,6 +36,12 @@ client.on('ready', () => {
 client.on('message', async msg => {
     console.log('MESSAGE RECEIVED', msg);
 
+    if (msg.selectedButtonId == 'test') {
+        return msg.reply('You clicked the button!');
+    } else if (msg.selectedRowId == 'test') {
+        return msg.reply('You clicked that section');
+    }
+
     if (msg.body === '!ping reply') {
         // Send a new message as a reply to the current one
         msg.reply('pong');
@@ -325,11 +331,25 @@ client.on('message', async msg => {
             client.interface.openChatWindowAt(quotedMsg.id._serialized);
         }
     } else if (msg.body === '!buttons') {
-        let button = new Buttons('Button body', [{ body: 'bt1' }, { body: 'bt2' }, { body: 'bt3' }], 'title', 'footer');
+        let button = new Buttons(
+            'Button body\n\nWant to test buttons some more? Check out https://github.com/wwebjs/buttons-test',
+            [
+                { body: 'Some text' },
+                { body: 'Try clicking me (id:test)', id: 'test'},
+            ],
+            'title',
+            'footer'
+        );
         client.sendMessage(msg.from, button);
     } else if (msg.body === '!list') {
         let sections = [
-            { title: 'sectionTitle', rows: [{ title: 'ListItem1', description: 'desc' }, { title: 'ListItem2' }] }
+            {
+                title: 'Secton title',
+                rows: [
+                    {title:'ListItem1', description: 'desc'},
+                    {title: 'Try clicking me (id: test)', id: 'test'}
+                ]
+            }
         ];
         let list = new List('List body', 'btnText', sections, 'Title', 'footer');
         client.sendMessage(msg.from, list);

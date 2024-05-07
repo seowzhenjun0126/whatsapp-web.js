@@ -681,7 +681,7 @@ class Client extends EventEmitter {
                 this.emit(Events.MESSAGE_CIPHERTEXT, new Message(this, msg));
             });
 
-            await page.exposeFunction('onPollVoteEvent', (vote) => {
+            await this.pupPage.exposeFunction('onPollVoteEvent', (vote) => {
                 const _vote = new PollVote(this, vote);
                 /**
                  * Emitted when some poll option is selected or deselected,
@@ -716,6 +716,11 @@ class Client extends EventEmitter {
                 }
             });
             window.Store.Chat.on('change:unreadCount', (chat) => {window.onChatUnreadCountEvent(chat);});
+            window.Store.PollVote.on('add', (vote) => {
+                const pollVoteModel = window.WWebJS.getPollVoteModel(vote);
+                pollVoteModel && window.onPollVoteEvent(pollVoteModel);
+            });
+
             {
                 const module = window.Store.createOrUpdateReactionsModule;
                 const ogMethod = module.createOrUpdateReactions;

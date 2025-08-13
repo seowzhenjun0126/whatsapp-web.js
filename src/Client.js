@@ -2310,19 +2310,25 @@ class Client extends EventEmitter {
      * @returns {Promise<Array<{ lid: string, pn: string }>>}
      */
     async getContactLidAndPhone(userIds) {
-        return await this.pupPage.evaluate((userIds) => {
+        return await this.pupPage.evaluate(async (userIds) => {
             !Array.isArray(userIds) && (userIds = [userIds]);
-            return userIds.map(userId => {
-                const wid = window.Store.WidFactory.createWid(userId);
-                const isLid = wid.server === 'lid';
-                const lid = isLid ? wid : window.Store.LidUtils.getCurrentLid(wid);
-                const phone = isLid ? window.Store.LidUtils.getPhoneNumber(wid) : wid;
+            return await Promise.all(
+                userIds.map(async userId => {
+                    const wid = window.Store.WidFactory.createWid(userId);
+                    const isLid = wid.server === 'lid';
+                    let lid = isLid ? wid : window.Store.LidUtils.getCurrentLid(wid);
+                    const phone = isLid ? window.Store.LidUtils.getPhoneNumber(wid) : wid;
+                    if (lid === undefined) {
+                        await window.Store.QueryExist(wid);
+                        lid = window.Store.LidUtils.getCurrentLid(wid);
+                    }
 
-                return {
-                    lid: lid._serialized,
-                    pn: phone._serialized
-                };
-            });
+                    return {
+                        lid: lid._serialized,
+                        pn: phone._serialized
+                    };
+                })
+            );
         }, userIds);
     }
 }

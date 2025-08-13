@@ -556,6 +556,23 @@ exports.LoadUtils = () => {
             : chat;
     };
 
+    window.WWebJS.findOrCreateLatestChat = async (chatId) => {
+        try {
+            const chatWid = window.Store.WidFactory.createWid(chatId);
+            const res = await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatWid);
+            const chat = res?.chat;
+
+            if(!chat) {
+                return await window.WWebJS.getChat(chatId, { getAsModel: false });
+            }
+
+            return chat;    
+            
+        } catch (error) {
+            return await window.WWebJS.getChat(chatId, { getAsModel: false });
+        }
+    };
+
     window.WWebJS.getChannelMetadata = async (inviteCode) => {
         const response =
             await window.Store.ChannelUtils.queryNewsletterMetadataByInviteCode(

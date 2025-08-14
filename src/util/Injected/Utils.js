@@ -535,6 +535,9 @@ exports.LoadUtils = () => {
     window.WWebJS.getChat = async (chatId, { getAsModel = true } = {}) => {
         const isChannel = /@\w*newsletter\b/.test(chatId);
         const chatWid = window.Store.WidFactory.createWid(chatId);
+        if (!(await window.Store.QueryExist(wid))?.wid) {
+            return null;
+        }
         let chat;
 
         if (isChannel) {

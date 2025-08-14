@@ -548,29 +548,12 @@ exports.LoadUtils = () => {
                 chat = null;
             }
         } else {
-            chat = window.Store.Chat.get(chatWid) || (await window.Store.Chat.find(chatWid));
+            chat = (await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatWid))?.chat || window.Store.Chat.get(chatWid) || (await window.Store.Chat.find(chatWid));
         }
 
         return getAsModel && chat
             ? await window.WWebJS.getChatModel(chat, { isChannel: isChannel })
             : chat;
-    };
-
-    window.WWebJS.findOrCreateLatestChat = async (chatId) => {
-        try {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            const res = await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatWid);
-            const chat = res?.chat;
-
-            if(!chat) {
-                return await window.WWebJS.getChat(chatId, { getAsModel: false });
-            }
-
-            return chat;    
-            
-        } catch (error) {
-            return await window.WWebJS.getChat(chatId, { getAsModel: false });
-        }
     };
 
     window.WWebJS.getChannelMetadata = async (inviteCode) => {

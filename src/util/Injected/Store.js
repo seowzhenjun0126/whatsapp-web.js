@@ -101,7 +101,7 @@ exports.ExposeStore = () => {
     window.Store.ChatGetters = window.require('WAWebChatGetters');
     window.Store.PinnedMsgUtils = window.require('WAWebSendPinMessageAction');
     window.Store.UploadUtils = window.require('WAWebUploadManager');
-    window.Store.WAWebStreamModel = window.require('WAWebStreamModel');
+    // window.Store.WAWebStreamModel = window.require('WAWebStreamModel');
     window.Store.FindOrCreateChat = window.require('WAWebFindChatAction');
     
     window.Store.Settings = {

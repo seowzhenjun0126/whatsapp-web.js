@@ -526,7 +526,7 @@ exports.LoadUtils = () => {
     window.WWebJS.getChat = async (chatId, { getAsModel = true } = {}) => {
         const isChannel = /@\w*newsletter\b/.test(chatId);
         const chatWid = window.Store.WidFactory.createWid(chatId);
-        window.Store.LidUtils.checkPnToLidMapping([chatWid]);
+
         let chat;
 
         if (isChannel) {
@@ -540,7 +540,23 @@ exports.LoadUtils = () => {
                 chat = null;
             }
         } else {
-            chat = (await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatWid))?.chat || window.Store.Chat.get(chatWid) || (await window.Store.Chat.find(chatWid));
+            chat = await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatWid)
+                .then(chat => chat.chat)
+                .catch(async err => {
+                    chat = window.Store.Chat.get(chatWid) || (await window.Store.Chat.find(chatWid));
+                    if (!chat) {
+                        return ;
+                    }
+
+                    try {
+                        await window.Store.Cmd.openChatBottom(chat);
+                        await window.Store.Cmd.openCurrentChatInfo();
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await window.Store.Cmd.closeActiveChat();
+                    } catch (err) {
+                        return ;
+                    }
+                })
         }
 
         return getAsModel && chat

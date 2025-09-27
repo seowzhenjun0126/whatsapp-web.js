@@ -553,6 +553,7 @@ exports.LoadUtils = () => {
                         await window.Store.Cmd.openCurrentChatInfo();
                         await new Promise(resolve => setTimeout(resolve, 500));
                         await window.Store.Cmd.closeActiveChat();
+                        chat = await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatWid)
                     } catch (err) {
                         return ;
                     }

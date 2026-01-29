@@ -125,6 +125,25 @@ class Client extends EventEmitter {
             return state == 'UNPAIRED' || state == 'UNPAIRED_IDLE';
         });
 
+        // Detect logout: if we were previously ready but now need authentication
+        const isUnpairedState = (s) => s === 'UNPAIRED' || s === 'UNPAIRED_IDLE';
+        if (needAuthentication) {
+            // Debounce: WhatsApp can briefly appear unpaired during reload
+            await new Promise(r => setTimeout(r, 1500));
+
+            const stateNow = await this.pupPage.evaluate(() => window.AuthStore?.AppState?.state);
+
+            if (!isUnpairedState(stateNow)) {
+                // False alarm: session restored after brief unpaired state
+                return;
+            }
+
+            // Confirmed logout - emit disconnected event
+            this.emit(Events.DISCONNECTED, 'LOGOUT');
+
+            this.lastLoggedOut = false;
+        }
+
         if (needAuthentication) {
             const { failed, failureEventPayload, restart } = await this.authStrategy.onAuthenticationNeeded();
 

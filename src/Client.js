@@ -1521,10 +1521,11 @@ class Client extends EventEmitter {
     async getProfilePicUrl(contactId) {
         const profilePic = await this.pupPage.evaluate(async contactId => {
             try {
+                const chat = await window.WWebJS.getChat(contactId);
                 const chatWid = window.Store.WidFactory.createWid(contactId);
                 return window.compareWwebVersions(window.Debug.VERSION, '<', '2.3000.0')
                     ? await window.Store.ProfilePic.profilePicFind(chatWid)
-                    : await window.Store.ProfilePic.requestProfilePicFromServer(chatWid);
+                    : await window.Store.ProfilePic.requestProfilePicFromServer(chat);
             } catch (err) {
                 if(err.name === 'ServerStatusCodeError') return undefined;
                 throw err;

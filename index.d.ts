@@ -412,6 +412,12 @@ declare namespace WAWebJS {
             message: Message
         ) => void): this
 
+        /** Emitted when a ciphertext message failed to decrypt after recovery attempt  */
+        on(event: 'message_ciphertext_failed', listener: (
+            /** The message that was ciphertext */
+            message: Message
+        ) => void): this
+
         /** Emitted when a message is deleted for everyone in the chat */
         on(event: 'message_revoke_everyone', listener: (
             /** The message that was revoked, in its current state. It will not contain the original message's data */

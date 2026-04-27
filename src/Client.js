@@ -87,6 +87,7 @@ class Client extends EventEmitter {
 
         this.currentIndexHtml = null;
         this.lastLoggedOut = false;
+        this._authEventListenersInjected = false; // Prevent duplicate event listeners
 
         Util.setFfmpegPath(this.options.ffmpegPath);
     }
@@ -281,25 +282,25 @@ class Client extends EventEmitter {
             this.lastLoggedOut = true;
             await this.pupPage.waitForNavigation({waitUntil: 'load', timeout: 5000}).catch((_) => _);
         });
-        await this.pupPage.evaluate(() => {
-            window.AuthStore.AppState.on('change:state', (_AppState, state) => { window.onAuthAppStateChangedEvent(state); });
 
-            const appState = window.AuthStore.AppState;
-            // Fix race condition: If hasSynced is already true (fast session restore),
-            // the change:hasSynced event will never fire. Check current state immediately.
-            // See: https://github.com/pedroslopez/whatsapp-web.js/pull/5748
-            if (appState.hasSynced) {
-                window.onAppStateHasSyncedEvent();
-            }
+        // Only register auth event listeners once to prevent duplicate READY events
+        if (!this._authEventListenersInjected) {
+            await this.pupPage.evaluate(() => {
+                // Guard against duplicate listeners in the page context as well
+                if (window._authListenersRegistered) return;
+                window._authListenersRegistered = true;
 
-            window.AuthStore.AppState.on('change:hasSynced', () => { window.onAppStateHasSyncedEvent(); });
-            window.AuthStore.Cmd.on('offline_progress_update', () => {
-                window.onOfflineProgressUpdateEvent(window.AuthStore.OfflineMessageHandler.getOfflineDeliveryProgress()); 
+                window.AuthStore.AppState.on('change:state', (_AppState, state) => { window.onAuthAppStateChangedEvent(state); });
+                window.AuthStore.AppState.on('change:hasSynced', () => { window.onAppStateHasSyncedEvent(); });
+                window.AuthStore.Cmd.on('offline_progress_update', () => {
+                    window.onOfflineProgressUpdateEvent(window.AuthStore.OfflineMessageHandler.getOfflineDeliveryProgress());
+                });
+                window.AuthStore.Cmd.on('logout', async () => {
+                    await window.onLogoutEvent();
+                });
             });
-            window.AuthStore.Cmd.on('logout', async () => {
-                await window.onLogoutEvent();
-            });
-        });
+            this._authEventListenersInjected = true;
+        }
     }
 
     /**

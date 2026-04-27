@@ -283,6 +283,15 @@ class Client extends EventEmitter {
         });
         await this.pupPage.evaluate(() => {
             window.AuthStore.AppState.on('change:state', (_AppState, state) => { window.onAuthAppStateChangedEvent(state); });
+
+            const appState = window.AuthStore.AppState;
+            // Fix race condition: If hasSynced is already true (fast session restore),
+            // the change:hasSynced event will never fire. Check current state immediately.
+            // See: https://github.com/pedroslopez/whatsapp-web.js/pull/5748
+            if (appState.hasSynced) {
+                window.onAppStateHasSyncedEvent();
+            }
+
             window.AuthStore.AppState.on('change:hasSynced', () => { window.onAppStateHasSyncedEvent(); });
             window.AuthStore.Cmd.on('offline_progress_update', () => {
                 window.onOfflineProgressUpdateEvent(window.AuthStore.OfflineMessageHandler.getOfflineDeliveryProgress()); 

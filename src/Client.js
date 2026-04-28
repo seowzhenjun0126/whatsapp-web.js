@@ -307,7 +307,10 @@ class Client extends EventEmitter {
                     // });
 
                     this.emit(Events.AUTHENTICATION_FAILURE, 'Attaching event listeners');
-                    await this.attachEventListeners();
+                    await this.attachEventListeners().catch(err => {
+                        const error = err instanceof Error ? err : new Error(String(err));
+                        this.emit(Events.AUTHENTICATION_FAILURE, error.message);
+                    });
                 }
                 this.emit(Events.AUTHENTICATION_FAILURE, 'Ready!');
                 /**

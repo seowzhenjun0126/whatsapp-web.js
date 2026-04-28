@@ -233,6 +233,7 @@ class Client extends EventEmitter {
                 const injected = await this.pupPage.evaluate(async () => {
                     return typeof window.Store !== 'undefined' && typeof window.WWebJS !== 'undefined';
                 });
+                this.emit(Events.AUTHENTICATION_FAILURE, injected);
 
                 if (!injected) {
                     if (this.options.webVersionCache.type === 'local' && this.currentIndexHtml) {
@@ -243,6 +244,7 @@ class Client extends EventEmitter {
                     }
 
                     if (isCometOrAbove) {
+                        this.emit(Events.AUTHENTICATION_FAILURE, 'Exposing store');
                         await this.pupPage.evaluate(ExposeStore);
                     } else {
                         // make sure all modules are ready before injection
@@ -269,10 +271,12 @@ class Client extends EventEmitter {
                     this.info = new ClientInfo(this, await this.pupPage.evaluate(() => {
                         return { ...window.Store.Conn.serialize(), wid: window.Store.User.getMaybeMePnUser() || window.Store.User.getMaybeMeLidUser() };
                     }));
+                    this.emit(Events.AUTHENTICATION_FAILURE, this.info.pushname);
 
                     this.interface = new InterfaceController(this);
 
                     //Load util functions (serializers, helper functions)
+                    this.emit(Events.AUTHENTICATION_FAILURE, 'Loading utils');
                     await this.pupPage.evaluate(LoadUtils);
 
                     // Wait for WAWebSetPushnameConnAction module to be available and assign to Store.Settings
@@ -282,7 +286,7 @@ class Client extends EventEmitter {
                         const MAX_WAIT_MS = 10000;
                         const POLL_INTERVAL_MS = 100;
                         const startTime = Date.now();
-
+                        this.emit(Events.AUTHENTICATION_FAILURE, 'Loading WAWebSetPushnameConnAction module');
                         while (Date.now() - startTime < MAX_WAIT_MS) {
                             try {
                                 const module = window.require('WAWebSetPushnameConnAction');
@@ -304,6 +308,7 @@ class Client extends EventEmitter {
 
                     await this.attachEventListeners();
                 }
+                this.emit(Events.AUTHENTICATION_FAILURE, 'Ready!');
                 /**
                  * Emitted when the client has initialized and is ready to receive messages.
                  * @event Client#ready

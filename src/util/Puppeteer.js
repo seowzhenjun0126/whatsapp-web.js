@@ -38,7 +38,7 @@ async function exposeFunctionIfAbsent(page, name, fn) {
             }
         } else {
             console.warn('[WWebJS] Failed to remove exposed function in Puppeteer');
-            throw err;
+            // throw err;
         }
     }
 }

@@ -302,10 +302,8 @@ class Client extends EventEmitter {
                     //     console.warn('[wwebjs] WAWebSetPushnameConnAction module not available after timeout');
                     // });
 
-                    this.emit(Events.AUTHENTICATION_FAILURE, 'Attaching event listeners');
                     await this.attachEventListeners();
                 }
-                this.emit(Events.AUTHENTICATION_FAILURE, 'Ready!');
                 /**
                  * Emitted when the client has initialized and is ready to receive messages.
                  * @event Client#ready
@@ -496,7 +494,6 @@ class Client extends EventEmitter {
      * @property {boolean} reinject is this a reinject?
      */
     async attachEventListeners() {
-        console.log('[wwebjs] Attaching event listeners');
         await exposeFunctionIfAbsent(this.pupPage, 'onAddMessageEvent', msg => {
             if (msg.type === 'gp2') {
                 const notification = new GroupNotification(this, msg);
@@ -561,7 +558,6 @@ class Client extends EventEmitter {
                  */
             this.emit(Events.MESSAGE_RECEIVED, message);
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onAddMessageEvent');
 
         let last_message;
 
@@ -588,7 +584,6 @@ class Client extends EventEmitter {
             }
 
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onChangeMessageTypeEvent');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onChangeMessageEvent', (msg) => {
 
@@ -627,7 +622,6 @@ class Client extends EventEmitter {
                 this.emit(Events.CONTACT_CHANGED, message, oldId, newId, isContact);
             }
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onChangeMessageEvent');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onRemoveMessageEvent', (msg) => {
 
@@ -643,7 +637,6 @@ class Client extends EventEmitter {
             this.emit(Events.MESSAGE_REVOKED_ME, message);
 
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onRemoveMessageEvent');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onMessageAckEvent', (msg, ack) => {
 
@@ -658,7 +651,6 @@ class Client extends EventEmitter {
             this.emit(Events.MESSAGE_ACK, message, ack);
 
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onMessageAckEvent');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onChatUnreadCountEvent', async (data) =>{
             const chat = await this.getChatById(data.id);
@@ -668,7 +660,6 @@ class Client extends EventEmitter {
                  */
             this.emit(Events.UNREAD_COUNT, chat);
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onChatUnreadCountEvent');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onMessageMediaUploadedEvent', (msg) => {
 
@@ -681,7 +672,6 @@ class Client extends EventEmitter {
                  */
             this.emit(Events.MEDIA_UPLOADED, message);
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onMessageMediaUploadedEvent');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onAppStateChangedEvent', async (state) => {
             /**
@@ -714,7 +704,6 @@ class Client extends EventEmitter {
                 this.destroy();
             }
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onAppStateChangedEvent');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onBatteryStateChangedEvent', (state) => {
             const { battery, plugged } = state;
@@ -731,7 +720,6 @@ class Client extends EventEmitter {
                  */
             this.emit(Events.BATTERY_CHANGED, { battery, plugged });
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onBatteryStateChangedEvent');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onIncomingCall', (call) => {
             /**
@@ -750,7 +738,6 @@ class Client extends EventEmitter {
             const cll = new Call(this, call);
             this.emit(Events.INCOMING_CALL, cll);
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onIncomingCall');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onReaction', (reactions) => {
             for (const reaction of reactions) {
@@ -772,7 +759,6 @@ class Client extends EventEmitter {
                 this.emit(Events.MESSAGE_REACTION, new Reaction(this, reaction));
             }
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onReaction');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onRemoveChatEvent', async (chat) => {
             const _chat = await this.getChatById(chat.id);
@@ -784,7 +770,6 @@ class Client extends EventEmitter {
                  */
             this.emit(Events.CHAT_REMOVED, _chat);
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onRemoveChatEvent');
             
         await exposeFunctionIfAbsent(this.pupPage, 'onArchiveChatEvent', async (chat, currState, prevState) => {
             const _chat = await this.getChatById(chat.id);
@@ -798,7 +783,6 @@ class Client extends EventEmitter {
                  */
             this.emit(Events.CHAT_ARCHIVED, _chat, currState, prevState);
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onArchiveChatEvent');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onEditMessageEvent', (msg, newBody, prevBody) => {
                 
@@ -814,7 +798,6 @@ class Client extends EventEmitter {
                  */
             this.emit(Events.MESSAGE_EDIT, new Message(this, msg), newBody, prevBody);
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onEditMessageEvent');
             
         await exposeFunctionIfAbsent(this.pupPage, 'onAddMessageCiphertextEvent', msg => {
                 
@@ -825,7 +808,6 @@ class Client extends EventEmitter {
                  */
             this.emit(Events.MESSAGE_CIPHERTEXT, new Message(this, msg));
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onAddMessageCiphertextEvent');
 
         await exposeFunctionIfAbsent(
             this.pupPage,
@@ -842,7 +824,6 @@ class Client extends EventEmitter {
                 );
             },
         );
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onCiphertextFailedEvent');
 
         await exposeFunctionIfAbsent(this.pupPage, 'onPollVoteEvent', (votes) => {
             for (const vote of votes) {
@@ -854,7 +835,6 @@ class Client extends EventEmitter {
                 this.emit(Events.VOTE_UPDATE, new PollVote(this, vote));
             }
         });
-        this.emit(Events.AUTHENTICATION_FAILURE, 'onPollVoteEvent');
 
         await this.pupPage.evaluate(() => {
             // Enable placeholder message resend (recovery for ciphertext messages)
@@ -865,26 +845,16 @@ class Client extends EventEmitter {
                 // Module may not be available in all versions
             }
             window.Store.Msg.on('change', (msg) => { window.onChangeMessageEvent(window.WWebJS.getMessageModel(msg)); });
-            console.log('change');
             window.Store.Msg.on('change:type', (msg) => { window.onChangeMessageTypeEvent(window.WWebJS.getMessageModel(msg)); });
-            console.log('change:type');
             window.Store.Msg.on('change:ack', (msg, ack) => { window.onMessageAckEvent(window.WWebJS.getMessageModel(msg), ack); });
-            console.log('change:ack');
             window.Store.Msg.on('change:isUnsentMedia', (msg, unsent) => { if (msg.id.fromMe && !unsent) window.onMessageMediaUploadedEvent(window.WWebJS.getMessageModel(msg)); });
-            console.log('change:isUnsentMedia');
             window.Store.Msg.on('remove', (msg) => { if (msg.isNewMsg) window.onRemoveMessageEvent(window.WWebJS.getMessageModel(msg)); });
-            console.log('remove');
             window.Store.Msg.on('change:body change:caption', (msg, newBody, prevBody) => { window.onEditMessageEvent(window.WWebJS.getMessageModel(msg), newBody, prevBody); });
-            console.log('change:body change:caption');
             window.Store.AppState.on('change:state', (_AppState, state) => { window.onAppStateChangedEvent(state); });
-            console.log('change:state');
             window.Store.Conn.on('change:battery', (state) => { window.onBatteryStateChangedEvent(state); });
-            console.log('change:battery');
             // window.Store.Call.on('add', (call) => { window.onIncomingCall(call); });
             window.Store.Chat.on('remove', async (chat) => { window.onRemoveChatEvent(await window.WWebJS.getChatModel(chat)); });
-            console.log('remove');
             window.Store.Chat.on('change:archive', async (chat, currState, prevState) => { window.onArchiveChatEvent(await window.WWebJS.getChatModel(chat), currState, prevState); });
-            console.log('change:archive');
             window.Store.Msg.on('add', (msg) => { 
                 if (msg.isNewMsg) {
                     if(msg.type === 'ciphertext') {
@@ -922,9 +892,7 @@ class Client extends EventEmitter {
                     }
                 }
             });
-            console.log('add');
             window.Store.Chat.on('change:unreadCount', (chat) => {window.onChatUnreadCountEvent(chat);});
-            console.log('change:unreadCount');
 
             if (window.compareWwebVersions(window.Debug.VERSION, '>=', '2.3000.1014111620')) {
                 const module = window.Store.AddonReactionTable;

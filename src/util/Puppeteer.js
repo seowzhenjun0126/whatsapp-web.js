@@ -36,9 +36,10 @@ async function exposeFunctionIfAbsent(page, name, fn) {
                 // If removal fails, the binding is still usable from the previous expose
                 // This can happen in older Puppeteer versions
             }
+        } else if (err.message && err.message.includes('Timeout')) {
+            console.warn('[WWebJS] Timeout when exposing function in Puppeteer');
         } else {
-            console.warn('[WWebJS] Failed to remove exposed function in Puppeteer');
-            // throw err;
+            throw err;
         }
     }
 }

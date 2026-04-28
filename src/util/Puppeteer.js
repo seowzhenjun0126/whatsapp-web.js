@@ -20,7 +20,10 @@ async function exposeFunctionIfAbsent(page, name, fn) {
     // Try to expose the function, handling the case where the CDP binding
     // already exists (can happen after page navigation)
     try {
-        await page.exposeFunction(name, fn);
+        await withTimeout(
+            page.exposeFunction(name, fn),
+            5000
+        );
     } catch (err) {
         if (err.message && err.message.includes('already exists')) {
             // CDP binding exists but page context was cleared (after navigation)
@@ -34,9 +37,19 @@ async function exposeFunctionIfAbsent(page, name, fn) {
                 // This can happen in older Puppeteer versions
             }
         } else {
+            console.warn('[WWebJS] Failed to remove exposed function in Puppeteer');
             throw err;
         }
     }
+}
+
+function withTimeout(promise, ms) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout')), ms)
+        )
+    ]);
 }
 
 module.exports = {exposeFunctionIfAbsent};

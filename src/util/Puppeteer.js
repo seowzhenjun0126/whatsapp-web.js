@@ -37,7 +37,7 @@ async function exposeFunctionIfAbsent(page, name, fn) {
                 // This can happen in older Puppeteer versions
             }
         } else if (err.message && err.message.includes('Timeout')) {
-            console.warn('[WWebJS] Timeout when exposing function in Puppeteer');
+            console.warn(`[WWebJS] Timeout when exposing ${name} function in Puppeteer`);
         } else {
             throw err;
         }

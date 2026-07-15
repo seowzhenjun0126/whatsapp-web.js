@@ -331,7 +331,7 @@ exports.LoadUtils = () => {
 
         if (options.waitUntilMsgSent) await sendMsgResultPromise;
 
-        return window.Store.Msg.get(newMsgKey._serialized);
+        return window.Store.Msg.get(newMsgKey._serialized || newMsgKey.$1);
     };
 	
     window.WWebJS.editMessage = async (msg, content, options = {}) => {
@@ -375,7 +375,7 @@ exports.LoadUtils = () => {
         };
 
         await window.Store.EditMessage.sendMessageEdit(msg, content, internalOptions);
-        return window.Store.Msg.get(msg.id._serialized);
+        return window.Store.Msg.get(msg.id._serialized || msg.id.$1);
     };
 
     window.WWebJS.toStickerData = async (mediaInfo) => {
@@ -515,7 +515,13 @@ exports.LoadUtils = () => {
         }
 
         if (typeof msg.id.remote === 'object') {
-            msg.id = Object.assign({}, msg.id, { remote: msg.id.remote._serialized });
+            msg.id = Object.assign({}, msg.id, { remote: msg.id.remote._serialized || msg.id.remote.$1 });
+        }
+
+        // WhatsApp Web changed _serialized to $1 in message IDs (2026-07 update).
+        // Normalize here so all downstream Node.js code can keep using _serialized.
+        if (msg.id && msg.id._serialized == null && msg.id.$1 != null) {
+            msg.id = Object.assign({}, msg.id, { _serialized: msg.id.$1 });
         }
 
         delete msg.pendingAckUpdate;
@@ -620,7 +626,7 @@ exports.LoadUtils = () => {
 
         if (chat.groupMetadata) {
             model.isGroup = true;
-            const chatWid = window.Store.WidFactory.createWid(chat.id._serialized);
+            const chatWid = window.Store.WidFactory.createWid(chat.id._serialized || chat.id.$1);
             await window.Store.GroupMetadata.update(chatWid);
             chat.groupMetadata.participants._models
                 .filter(x => x.id?._serialized?.endsWith('@lid'))
@@ -637,8 +643,11 @@ exports.LoadUtils = () => {
 
         model.lastMessage = null;
         if (model.msgs && model.msgs.length) {
-            const lastMessage = chat.lastReceivedKey
-                ? window.Store.Msg.get(chat.lastReceivedKey._serialized) || (await window.Store.Msg.getMessagesById([chat.lastReceivedKey._serialized]))?.messages?.[0]
+            const _lastReceivedKeyId = chat.lastReceivedKey
+                ? chat.lastReceivedKey._serialized || chat.lastReceivedKey.$1
+                : null;
+            const lastMessage = _lastReceivedKeyId
+                ? window.Store.Msg.get(_lastReceivedKeyId) || (await window.Store.Msg.getMessagesById([_lastReceivedKeyId]))?.messages?.[0]
                 : null;
             lastMessage && (model.lastMessage = window.WWebJS.getMessageModel(lastMessage));
         }
@@ -1091,7 +1100,12 @@ exports.LoadUtils = () => {
                                 ? value.participant[0].membershipRequestsActionAcceptParticipantMixins?.value.error
                                 : value.participant[0].membershipRequestsActionRejectParticipantMixins?.value.error;
                             return {
-                                requesterId: window.Store.WidFactory.createWid(p.jid)._serialized,
+                                requesterId: (() => {
+                                    const _w = window
+                                        .require('WAWebWidFactory')
+                                        .createWid(p.jid);
+                                    return _w._serialized || _w.$1;
+                                })(),
                                 ...(error
                                     ? { error: +error, message: membReqResCodes[error] || membReqResCodes.default }
                                     : { message: `${toApprove ? 'Approved' : 'Rejected'} successfully` })
@@ -1101,7 +1115,15 @@ exports.LoadUtils = () => {
                     }
                 } else {
                     result.push({
-                        requesterId: window.Store.JidToWid.userJidToUserWid(participant.participantArgs[0].participantJid)._serialized,
+                        requesterId: (() => {
+                            const _w = window
+                                .require('WAWebJidToWid')
+                                .userJidToUserWid(
+                                    participant.participantArgs[0]
+                                        .participantJid,
+                                );
+                            return _w._serialized || _w.$1;
+                        })(),
                         message: 'ServerStatusCodeError'
                     });
                 }

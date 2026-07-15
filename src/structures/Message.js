@@ -34,7 +34,7 @@ class Message extends Base {
          * ID that represents the message
          * @type {object}
          */
-        this.id = data.id;
+        this.id = Base._normalizeId(data.id);
 
         /**
          * ACK status for the message
@@ -70,7 +70,7 @@ class Message extends Base {
          * ID for the Chat that this message was sent to, except if the message was sent by the current user.
          * @type {string}
          */
-        this.from = (typeof (data.from) === 'object' && data.from !== null) ? data.from._serialized : data.from;
+        this.from = (typeof (data.from) === 'object' && data.from !== null) ? data.from._serialized || data.from.$1 : data.from;
 
         /**
          * ID for who this message is for.
@@ -79,13 +79,13 @@ class Message extends Base {
          * If the message is sent by another user, it will be the ID for the current user.
          * @type {string}
          */
-        this.to = (typeof (data.to) === 'object' && data.to !== null) ? data.to._serialized : data.to;
+        this.to = (typeof (data.to) === 'object' && data.to !== null) ? data.to._serialized || data.to.$1 : data.to;
 
         /**
          * If the message was sent to a group, this field will contain the user that sent the message.
          * @type {string}
          */
-        this.author = (typeof (data.author) === 'object' && data.author !== null) ? data.author._serialized : data.author;
+        this.author = (typeof (data.author) === 'object' && data.author !== null) ? data.author._serialized || data.author.$1 : data.author;
 
         /**
          * String that represents from which device type the message was sent
@@ -183,8 +183,8 @@ class Message extends Base {
             inviteCodeExp: data.inviteCodeExp,
             groupId: data.inviteGrp,
             groupName: data.inviteGrpName,
-            fromId: typeof data.from === 'object' && '_serialized' in data.from ? data.from._serialized : data.from,
-            toId: typeof data.to === 'object' && '_serialized' in data.to ? data.to._serialized : data.to
+            fromId: typeof data.from === 'object' && (data.from._serialized || data.from.$1) ? data.from._serialized || data.from.$1 : data.from,
+            toId: typeof data.to === 'object' && (data.to._serialized || data.to.$1) ? data.to._serialized || data.to.$1 : data.to
         } : undefined;
 
         /**

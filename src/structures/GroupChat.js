@@ -126,7 +126,7 @@ class GroupChat extends Chat {
             };
 
             for (let pWid of participantWids) {
-                const pId = pWid._serialized;
+                const pId = pWid._serialized || pWid.$1;
                 pWid = pWid.server === 'lid' ? window.Store.LidUtils.getPhoneNumber(pWid) : pWid;
                 
                 participantData[pId] = {
@@ -135,7 +135,7 @@ class GroupChat extends Chat {
                     isInviteV4Sent: false
                 };
 
-                if (groupParticipants.some(p => p._serialized === pId)) {
+                if (groupParticipants.some(p => (p._serialized || p.$1) === pId)) {
                     participantData[pId].code = 409;
                     participantData[pId].message = errorCodes[409];
                     continue;
@@ -164,7 +164,7 @@ class GroupChat extends Chat {
                         const groupName = group.formattedTitle || group.name;
                         const res = await window.Store.GroupInviteV4.sendGroupInviteMessage(
                             userChat,
-                            group.id._serialized,
+                            group.id._serialized || group.id.$1,
                             groupName,
                             rpcResult.inviteV4Code,
                             rpcResult.inviteV4CodeExp,
@@ -198,8 +198,8 @@ class GroupChat extends Chat {
             const participants = (await Promise.all(participantIds.map(async p => {
                 const { lid, phone } = await window.WWebJS.enforceLidAndPnRetrieval(p);
 
-                return chat.groupMetadata.participants.get(lid?._serialized) ||
-                    chat.groupMetadata.participants.get(phone?._serialized);
+                return chat.groupMetadata.participants.get(lid?._serialized || lid?.$1) ||
+                    chat.groupMetadata.participants.get(phone?._serialized || phone?.$1);
             }))).filter(Boolean);
             await window.Store.GroupParticipants.removeParticipants(chat, participants);
             return { status: 200 };
@@ -217,8 +217,8 @@ class GroupChat extends Chat {
             const participants = (await Promise.all(participantIds.map(async p => {
                 const { lid, phone } = await window.WWebJS.enforceLidAndPnRetrieval(p);
 
-                return chat.groupMetadata.participants.get(lid?._serialized) ||
-                    chat.groupMetadata.participants.get(phone?._serialized);
+                return chat.groupMetadata.participants.get(lid?._serialized || lid?.$1) ||
+                    chat.groupMetadata.participants.get(phone?._serialized || phone?.$1);
             }))).filter(Boolean);
             await window.Store.GroupParticipants.promoteParticipants(chat, participants);
             return { status: 200 };
@@ -236,8 +236,8 @@ class GroupChat extends Chat {
             const participants = (await Promise.all(participantIds.map(async p => {
                 const { lid, phone } = await window.WWebJS.enforceLidAndPnRetrieval(p);
 
-                return chat.groupMetadata.participants.get(lid?._serialized) ||
-                    chat.groupMetadata.participants.get(phone?._serialized);
+                return chat.groupMetadata.participants.get(lid?._serialized || lid?.$1) ||
+                    chat.groupMetadata.participants.get(phone?._serialized || phone?.$1);
             }))).filter(Boolean);
             await window.Store.GroupParticipants.demoteParticipants(chat, participants);
             return { status: 200 };

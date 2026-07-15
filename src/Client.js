@@ -87,6 +87,8 @@ class Client extends EventEmitter {
 
         this.currentIndexHtml = null;
         this.lastLoggedOut = false;
+        this._authEventListenersInjected = false; // Prevent duplicate event listeners
+        this._readyEmitted = false; // Prevent duplicate READY events
 
         Util.setFfmpegPath(this.options.ffmpegPath);
     }
@@ -217,6 +219,9 @@ class Client extends EventEmitter {
         });
 
         await exposeFunctionIfAbsent(this.pupPage, 'onAppStateHasSyncedEvent', async () => {
+            // Guard against multiple READY events (e.g., if hasSynced toggles true->false->true)
+            if (this._readyEmitted) return;
+
             try {
                 const authEventPayload = await this.authStrategy.getAuthEventPayload();
                 /**
@@ -270,12 +275,40 @@ class Client extends EventEmitter {
                     //Load util functions (serializers, helper functions)
                     await this.pupPage.evaluate(LoadUtils);
 
+                    // Wait for WAWebSetPushnameConnAction module to be available and assign to Store.Settings
+                    // This module may not be loaded immediately when restoring an existing session
+                    // See: https://github.com/pedroslopez/whatsapp-web.js/pull/3975
+                    // await this.pupPage.evaluate(async () => {
+                    //     const MAX_WAIT_MS = 10000;
+                    //     const POLL_INTERVAL_MS = 100;
+                    //     const startTime = Date.now();
+
+                    //     while (Date.now() - startTime < MAX_WAIT_MS) {
+                    //         try {
+                    //             const module = window.require('WAWebSetPushnameConnAction');
+                    //             if (module && typeof module.setPushname === 'function') {
+                    //                 window.Store.Settings.setPushname = module.setPushname;
+                    //                 return;
+                    //             }
+                    //         } catch (_) {
+                    //             // Module not yet available, continue polling
+                    //         }
+                    //         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+
+                    //     }
+
+                    //     // If module never loads, leave setPushname as null
+                    //     // setDisplayName will handle this gracefully
+                    //     console.warn('[wwebjs] WAWebSetPushnameConnAction module not available after timeout');
+                    // });
+
                     await this.attachEventListeners();
                 }
                 /**
                  * Emitted when the client has initialized and is ready to receive messages.
                  * @event Client#ready
                  */
+                this._readyEmitted = true;
                 this.emit(Events.READY);
                 this.authStrategy.afterAuthReady();
             } catch (err) {
@@ -299,30 +332,46 @@ class Client extends EventEmitter {
             await this.pupPage.waitForNavigation({waitUntil: 'load', timeout: 5000}).catch((_) => _);
         });
 
-        await this.pupPage.evaluate(() => {
-            const appState = window.AuthStore.AppState;
+        // Check if page lost its listener registration state (e.g., after page navigation/reload)
+        // If so, reset the client-side flag to allow re-registration
+        // See: https://github.com/pedroslopez/whatsapp-web.js/issues/5717
+        const pageHasListeners = await this.pupPage.evaluate(() => !!window._authListenersRegistered);
+        if (!pageHasListeners) {
+            this._authEventListenersInjected = false;
+        }
 
-            // Fix race condition: If hasSynced is already true (fast session restore),
-            // the change:hasSynced event will never fire. Check current state immediately.
-            // See: https://github.com/pedroslopez/whatsapp-web.js/pull/5748
-            if (appState.hasSynced) {
-                window.onAppStateHasSyncedEvent();
-            }
+        // Only register auth event listeners once to prevent duplicate READY events
+        if (!this._authEventListenersInjected) {
+            await this.pupPage.evaluate(() => {
+                // Guard against duplicate listeners in the page context as well
+                if (window._authListenersRegistered) return;
+                window._authListenersRegistered = true;
 
-            // Register listener for future state changes
-            appState.on('change:hasSynced', (_AppState, hasSynced) => {
-                if (hasSynced) {
+                const appState = window.AuthStore.AppState;
+
+                // Fix race condition: If hasSynced is already true (fast session restore),
+                // the change:hasSynced event will never fire. Check current state immediately.
+                // See: https://github.com/pedroslopez/whatsapp-web.js/pull/5748
+                if (appState.hasSynced) {
                     window.onAppStateHasSyncedEvent();
                 }
+
+                // Register listener for future state changes
+                appState.on('change:hasSynced', (_AppState, hasSynced) => {
+                    if (hasSynced) {
+                        window.onAppStateHasSyncedEvent();
+                    }
+                });
+                appState.on('change:state', (_AppState, state) => { window.onAuthAppStateChangedEvent(state); });
+                window.AuthStore.Cmd.on('offline_progress_update', () => {
+                    window.onOfflineProgressUpdateEvent(window.AuthStore.OfflineMessageHandler.getOfflineDeliveryProgress());
+                });
+                window.AuthStore.Cmd.on('logout', async () => {
+                    await window.onLogoutEvent();
+                });
             });
-            appState.on('change:state', (_AppState, state) => { window.onAuthAppStateChangedEvent(state); });
-            window.AuthStore.Cmd.on('offline_progress_update', () => {
-                window.onOfflineProgressUpdateEvent(window.AuthStore.OfflineMessageHandler.getOfflineDeliveryProgress());
-            });
-            window.AuthStore.Cmd.on('logout', async () => {
-                await window.onLogoutEvent();
-            });
-        });
+            this._authEventListenersInjected = true;
+        }
     }
 
     /**
@@ -946,6 +995,23 @@ class Client extends EventEmitter {
      * Closes the client
      */
     async destroy() {
+        // Allow IndexedDB and blob storage to flush pending writes before closing
+        // This helps prevent session corruption, especially for Business WhatsApp accounts
+        // See: https://github.com/pedroslopez/whatsapp-web.js/issues/5717
+        if (this.pupPage && !this.pupPage.isClosed()) {
+            try {
+                await this.pupPage.evaluate(() => {
+                    // Request persistence to ensure IndexedDB data is flushed
+                    if (navigator.storage && navigator.storage.persist) {
+                        return navigator.storage.persist();
+                    }
+                });
+            } catch (_) {
+                // Page may already be closed or navigated away
+            }
+            // Give browser time to flush any pending IndexedDB writes
+            await new Promise(resolve => setTimeout(resolve, 3000));
+        }
         await this.pupBrowser.close();
         await this.authStrategy.destroy();
     }

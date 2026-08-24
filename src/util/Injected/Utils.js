@@ -146,7 +146,7 @@ exports.LoadUtils = () => {
 
         let vcardOptions = {};
         if (options.contactCard) {
-            let contact = window.Store.Contact.get(options.contactCard);
+            let contact = await window.Store.Contact.find(options.contactCard);
             vcardOptions = {
                 body: window.Store.VCard.vcardFromContactModel(contact).vcard,
                 type: 'vcard',
@@ -154,7 +154,11 @@ exports.LoadUtils = () => {
             };
             delete options.contactCard;
         } else if (options.contactCardList) {
-            let contacts = options.contactCardList.map(c => window.Store.Contact.get(c));
+            let contacts = await Promise.all(
+                options.contactCardList.map((c) =>
+                    window.Store.Contact.find(c),
+                ),
+            );
             let vcards = contacts.map(c => window.Store.VCard.vcardFromContactModel(c));
             vcardOptions = {
                 type: 'multi_vcard',
@@ -628,10 +632,12 @@ exports.LoadUtils = () => {
             model.isGroup = true;
             const chatWid = window.Store.WidFactory.createWid(chat.id._serialized || chat.id.$1);
             await window.Store.GroupMetadata.update(chatWid);
-            chat.groupMetadata.participants._models
-                .filter(x => x.id?._serialized?.endsWith('@lid'))
-                .forEach(x => x.contact?.phoneNumber && (x.id = x.contact.phoneNumber));
-            model.groupMetadata = chat.groupMetadata.serialize();
+            const { toPn } = window.require('WAWebLidMigrationUtils');
+            const serializedMetadata = chat.groupMetadata.serialize();
+            for (const p of serializedMetadata.participants || []) {
+                p.id = toPn(p.id) ?? p.id;
+            }
+            model.groupMetadata = serializedMetadata;
             model.isReadOnly = chat.groupMetadata.announce;
         }
 
@@ -661,6 +667,12 @@ exports.LoadUtils = () => {
 
     window.WWebJS.getContactModel = contact => {
         let res = contact.serialize();
+
+        const wid = window.Store.WidFactory.createWidFromWidLike(contact.id);
+        if (wid.isLid() && contact.phoneNumber) {
+            res.id = contact.phoneNumber;
+        }
+
         res.isBusiness = contact.isBusiness === undefined ? false : contact.isBusiness;
 
         if (contact.businessProfile) {
@@ -686,13 +698,12 @@ exports.LoadUtils = () => {
     };
 
     window.WWebJS.getContact = async contactId => {
-        const wid = window.Store.WidFactory.createWid(contactId);
-        let contact = await window.Store.Contact.find(wid);
-        if (contact.id._serialized.endsWith('@lid')) {
-            contact.id = contact.phoneNumber;
+        const contactWid = window.Store.WidFactory.createWid(contactId);
+        const contact = await window.Store.Contact.find(contactWid);
+        if (contact.isBusiness || contact.isEnterprise) {
+            const bizProfile = await window.Store.BusinessProfile.find(contactWid);
+            bizProfile.profileOptions && (contact.businessProfile = bizProfile);
         }
-        const bizProfile = await window.Store.BusinessProfile.fetchBizProfile(wid);
-        bizProfile.profileOptions && (contact.businessProfile = bizProfile);
         return window.WWebJS.getContactModel(contact);
     };
 

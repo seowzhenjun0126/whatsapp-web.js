@@ -697,6 +697,7 @@ exports.LoadUtils = () => {
         res.name = window.Store.ContactMethods.getName(contact);
         res.shortName = window.Store.ContactMethods.getShortName(contact);
         res.pushname = window.Store.ContactMethods.getPushname(contact);
+        res.username = window.Store.ContactMethods.getUsername(contact);
 
         return res;
     };

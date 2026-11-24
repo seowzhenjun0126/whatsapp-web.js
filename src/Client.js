@@ -217,6 +217,11 @@ class Client extends EventEmitter {
                     const platform = window.AuthStore.RegistrationUtils.DEVICE_PLATFORM;
                     const getQR = (ref) => ref + ',' + staticKeyB64 + ',' + identityKeyB64 + ',' + advSecretKey + ',' + platform;
 
+                    const onRefChange = (_, ref) => {
+                        if (ref == null) return;
+                        window.onQRChangedEvent(getQR(ref));
+                    };
+
                     window.onQRChangedEvent(
                         getQR(window.require('WAWebConnModel').Conn.ref),
                     ); // initial qr

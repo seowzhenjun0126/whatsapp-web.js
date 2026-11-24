@@ -141,7 +141,7 @@ class Client extends EventEmitter {
 
         // Detect logout: if we were previously ready but now need authentication
         const isUnpairedState = (s) => s === 'UNPAIRED' || s === 'UNPAIRED_IDLE';
-        if (needAuthentication.need) {
+        if (needAuthentication.need && !loginRoute) {
             // Debounce: WhatsApp can briefly appear unpaired during reload
             await new Promise(r => setTimeout(r, 1500));
 

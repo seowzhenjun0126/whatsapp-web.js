@@ -109,27 +109,39 @@ class Client extends EventEmitter {
             await this.pupPage.evaluate(ExposeLegacyAuthStore, moduleRaid.toString());
         }
 
-        const needAuthentication = await this.pupPage.evaluate(async () => {
-            let state = window.AuthStore.AppState.state;
-
-            if (state === 'OPENING' || state === 'UNLAUNCHED' || state === 'PAIRING') {
-                // wait till state changes
-                await new Promise(r => {
-                    window.AuthStore.AppState.on('change:state', function waitTillInit(_AppState, state) {
-                        if (state !== 'OPENING' && state !== 'UNLAUNCHED' && state !== 'PAIRING') {
-                            window.AuthStore.AppState.off('change:state', waitTillInit);
-                            r();
-                        } 
-                    });
-                }); 
-            }
-            state = window.AuthStore.AppState.state;
-            return state == 'UNPAIRED' || state == 'UNPAIRED_IDLE';
-        });
+        // Logged-out browsers are redirected to the standalone /login route, whose bundle
+        // never resolves WAWebSocketModel: the connection state lives on the backend event
+        // bus there. Once the phone pairs, that route navigates to '/', the main bundle
+        // loads and the framenavigated handler injects again with the Socket available.
+        const needAuthHandle = await this.pupPage.waitForFunction(
+            () => {
+                const loginRoute =
+                    window.location.pathname.startsWith('/login');
+                const state = loginRoute
+                    ? window.require?.('WAWebBackendEventBus')
+                            ?.BackendEventBus?.socketState
+                    : window.require?.('WAWebSocketModel')?.Socket?.state;
+                const need =
+                    state === 'UNPAIRED' || state === 'UNPAIRED_IDLE';
+                if (
+                    !state ||
+                    state === 'OPENING' ||
+                    state === 'UNLAUNCHED' ||
+                    state === 'PAIRING' ||
+                    (loginRoute && !need)
+                ) {
+                    return false;
+                }
+                return { need, state, loginRoute };
+            },
+            { timeout: this.options.authTimeoutMs },
+        );
+        const needAuthentication = await needAuthHandle.jsonValue();
+        const loginRoute = needAuthentication.loginRoute === true;
 
         // Detect logout: if we were previously ready but now need authentication
         const isUnpairedState = (s) => s === 'UNPAIRED' || s === 'UNPAIRED_IDLE';
-        if (needAuthentication) {
+        if (needAuthentication.need) {
             // Debounce: WhatsApp can briefly appear unpaired during reload
             await new Promise(r => setTimeout(r, 1500));
 
@@ -146,7 +158,7 @@ class Client extends EventEmitter {
             this.lastLoggedOut = false;
         }
 
-        if (needAuthentication) {
+        if (needAuthentication.need) {
             const { failed, failureEventPayload, restart } = await this.authStrategy.onAuthenticationNeeded();
 
             if(failed) {
@@ -196,7 +208,7 @@ class Client extends EventEmitter {
                 });
 
 
-                await this.pupPage.evaluate(async () => {
+                await this.pupPage.evaluate(async (loginRoute) => {
                     const registrationInfo = await window.AuthStore.RegistrationUtils.waSignalStore.getRegistrationInfo();
                     const noiseKeyPair = await window.AuthStore.RegistrationUtils.waNoiseInfo.get();
                     const staticKeyB64 = window.AuthStore.Base64Tools.encodeB64(noiseKeyPair.staticKeyPair.pubKey);
@@ -205,16 +217,26 @@ class Client extends EventEmitter {
                     const platform = window.AuthStore.RegistrationUtils.DEVICE_PLATFORM;
                     const getQR = (ref) => ref + ',' + staticKeyB64 + ',' + identityKeyB64 + ',' + advSecretKey + ',' + platform;
 
+                    // Remove QR listener once authentication succeeds. The /login
+                    // route has no Socket and navigates away on success instead.
+                    if (loginRoute) return;
                     window.onQRChangedEvent(getQR(window.AuthStore.Conn.ref)); // initial qr
                     window.AuthStore.Conn.on('change:ref', (_, ref) => { window.onQRChangedEvent(getQR(ref)); }); // future QR changes
-                });
+                }, loginRoute);
             }
         }
 
         await exposeFunctionIfAbsent(this.pupPage, 'onAuthAppStateChangedEvent', async (state) => {
             if (state == 'UNPAIRED_IDLE' && !pairWithPhoneNumber.phoneNumber) {
-                // refresh qr code
-                window.Store.Cmd.refreshQR();
+                const Cmd = window.require('WAWebCmd').Cmd;
+                if (typeof Cmd.refreshQR === 'function') {
+                    return Cmd.refreshQR();
+                }
+                // The /login bundle has no Cmd.refreshQR; its QR screen
+                // refreshes through the backend event bus.
+                window
+                    .require('WAWebBackendEventBus')
+                    .BackendEventBus.triggerRefreshQR();
             }
         });
 
@@ -342,10 +364,42 @@ class Client extends EventEmitter {
 
         // Only register auth event listeners once to prevent duplicate READY events
         if (!this._authEventListenersInjected) {
-            await this.pupPage.evaluate(() => {
+            await this.pupPage.evaluate((loginRoute) => {
                 // Guard against duplicate listeners in the page context as well
                 if (window._authListenersRegistered) return;
                 window._authListenersRegistered = true;
+
+                // Clean up old listeners to prevent accumulation on re-inject
+                if (window._wwjsListeners) {
+                    for (const [obj, event, handler] of window._wwjsListeners) {
+                        obj.off(event, handler);
+                    }
+                }
+
+                if (loginRoute) {
+                    // Standalone /login route: no Socket model. Only the connection
+                    // state matters here (UNPAIRED_IDLE refreshes the QR); pairing
+                    // ends in a navigation to '/', which injects again.
+                    const { BackendEventBus } = window.require(
+                        'WAWebBackendEventBus',
+                    );
+                    const listeners = [
+                        [
+                            BackendEventBus,
+                            'set_socket_state',
+                            () => {
+                                window.onAuthAppStateChangedEvent(
+                                    BackendEventBus.socketState,
+                                );
+                            },
+                        ],
+                    ];
+                    for (const [obj, event, handler] of listeners) {
+                        obj.on(event, handler);
+                    }
+                    window._wwjsListeners = listeners;
+                    return;
+                }
 
                 const appState = window.AuthStore.AppState;
 
@@ -369,7 +423,7 @@ class Client extends EventEmitter {
                 window.AuthStore.Cmd.on('logout', async () => {
                     await window.onLogoutEvent();
                 });
-            });
+            }, loginRoute);
             this._authEventListenersInjected = true;
         }
     }

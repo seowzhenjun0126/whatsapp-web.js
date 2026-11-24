@@ -145,7 +145,7 @@ class Client extends EventEmitter {
             // Debounce: WhatsApp can briefly appear unpaired during reload
             await new Promise(r => setTimeout(r, 1500));
 
-            const stateNow = await this.pupPage.evaluate(() => window.AuthStore?.AppState?.state);
+            const stateNow = await this.pupPage.evaluate(() => window.require?.('WAWebSocketModel')?.Socket?.state);
 
             if (!isUnpairedState(stateNow)) {
                 // False alarm: session restored after brief unpaired state
@@ -217,11 +217,23 @@ class Client extends EventEmitter {
                     const platform = window.AuthStore.RegistrationUtils.DEVICE_PLATFORM;
                     const getQR = (ref) => ref + ',' + staticKeyB64 + ',' + identityKeyB64 + ',' + advSecretKey + ',' + platform;
 
+                    window.onQRChangedEvent(
+                        getQR(window.require('WAWebConnModel').Conn.ref),
+                    ); // initial qr
+                    window
+                        .require('WAWebConnModel')
+                        .Conn.on('change:ref', onRefChange); // future QR changes
+
                     // Remove QR listener once authentication succeeds. The /login
                     // route has no Socket and navigates away on success instead.
                     if (loginRoute) return;
-                    window.onQRChangedEvent(getQR(window.AuthStore.Conn.ref)); // initial qr
-                    window.AuthStore.Conn.on('change:ref', (_, ref) => { window.onQRChangedEvent(getQR(ref)); }); // future QR changes
+                    window
+                        .require('WAWebSocketModel')
+                        .Socket.on('change:hasSynced', () => {
+                            window
+                                .require('WAWebConnModel')
+                                .Conn.off('change:ref', onRefChange);
+                        });
                 }, loginRoute);
             }
         }

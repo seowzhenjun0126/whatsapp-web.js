@@ -401,7 +401,7 @@ class Client extends EventEmitter {
                     return;
                 }
 
-                const appState = window.AuthStore.AppState;
+                const appState = window.require('WAWebSocketModel').Socket;
 
                 // Fix race condition: If hasSynced is already true (fast session restore),
                 // the change:hasSynced event will never fire. Check current state immediately.
@@ -532,7 +532,7 @@ class Client extends EventEmitter {
                 clearInterval(window.codeInterval); // remove existing interval
             }
             window.codeInterval = setInterval(async () => {
-                if (window.AuthStore.AppState.state != 'UNPAIRED' && window.AuthStore.AppState.state != 'UNPAIRED_IDLE') {
+                if (window.require('WAWebSocketModel').Socket.state != 'UNPAIRED' && window.require('WAWebSocketModel').Socket.state != 'UNPAIRED_IDLE') {
                     clearInterval(window.codeInterval);
                     return;
                 }

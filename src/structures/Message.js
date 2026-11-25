@@ -109,7 +109,7 @@ class Message extends Base {
             typeof data.id.id === 'string' && data.id.id.length > 25
                 ? 'android'
                 : typeof data.id.id === 'string' &&
-                    data.id.id.substring(0, 2) === '3A'
+                    data.id.id.substring(0, 2) === '2A'
                   ? 'ios'
                   : 'web';
         /**
